@@ -222,7 +222,7 @@ input[type=radio], input[type=checkbox] { accent-color: var(--gold); width: 20px
 /* ---------- Peta tapak (macam kerusi bas) ---------- */
 .map-wrap { background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 12px; overflow-x: auto; }
 .lotmap { display: grid; gap: 7px; min-width: min-content; }
-.lot { min-width: 52px; height: 46px; border-radius: 10px; border: 1.5px solid var(--lot-border); background: var(--card-2); color: var(--text); font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 4px; }
+.lot { min-width: 52px; min-height: 46px; height: auto; line-height: 1.15; word-break: break-word; text-align: center; border-radius: 10px; border: 1.5px solid var(--lot-border); background: var(--card-2); color: var(--text); font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0 4px; }
 .lot.free:hover { border-color: var(--gold); }
 .lot.sel { outline: 3px solid var(--gold); outline-offset: 2px; }
 .lot.mine, .lot.v-sel { background: var(--mine-bg); border-color: transparent; color: var(--mine-ink); box-shadow: 0 0 16px var(--mine-glow); }

@@ -1,6 +1,6 @@
 // Service worker ringkas: simpan fail apps supaya cepat dibuka.
 // Tukar VERSION setiap kali anda kemas kini kod, supaya phone vendor dapat versi baru.
-const VERSION = 'stailo-v6';
+const VERSION = 'stailo-v10';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/lib.js', './js/config.js',

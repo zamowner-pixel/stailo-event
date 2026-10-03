@@ -203,6 +203,7 @@ export function lotMap(lots, { mode, selectedId } = {}) {
     if (mode === 'vendor') {
       if (l.is_mine) { cls = 'mine'; aria = 'tapak anda'; }
       else if (l.status !== 'free') { cls = 'taken'; aria = 'sudah diambil'; disabled = ' disabled'; label = icon('lock', 11) + label; }
+      else if (!(Number(l.price) > 0)) { cls = 'taken'; aria = 'harga belum ditetapkan'; disabled = ' disabled'; }
       else if (l.id === selectedId) { cls = 'v-sel'; aria = 'dipilih'; }
       else { cls = 'free'; aria = 'kosong'; }
     } else {

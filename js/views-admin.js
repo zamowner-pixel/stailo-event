@@ -5,6 +5,7 @@ import {
 } from './lib.js';
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const priceText = (p) => (Number(p) > 0 ? rm(p) : 'Harga belum ditetapkan');
 
 async function activeEvents() {
   return must(sb.from('events').select('*').order('created_at', { ascending: false }));
@@ -32,10 +33,11 @@ export async function adminHomeView() {
     <header class="topbar"><img src="assets/logo.jpg" alt="Stailo Event" style="width:52px;height:52px;border-radius:14px;box-shadow:0 0 18px var(--mine-glow)"><div style="flex:1"><div class="eyebrow">ADMIN</div><h1 style="font-size:24px">Hai, ${esc(state.profile.owner_name || state.profile.business_name || 'Admin')}</h1></div></header>
     <div class="content">
       ${ev ? `
-      <a class="card dark stack" href="#/a/tapak?e=${ev.id}" style="color:#fff">
-        <div><div class="small muted" style="font-weight:600;letter-spacing:.06em">${ev.is_active ? 'EVENT AKTIF' : 'EVENT'}</div>
+      <div class="card dark stack">
+        <button class="icon-btn" id="evdel" aria-label="Padam atau batalkan event" style="position:absolute;top:12px;right:12px;z-index:2;width:40px;height:40px;background:rgba(0,0,0,.35);border-color:rgba(255,255,255,.18);color:var(--red)">${icon('trash', 18)}</button>
+        <a href="#/a/tapak?e=${ev.id}" style="color:inherit;padding-right:44px"><div class="small muted" style="font-weight:600;letter-spacing:.06em">${ev.is_active ? 'EVENT AKTIF' : 'EVENT DITUTUP'}</div>
         <div style="font-family:var(--display);font-weight:700;font-size:21px">${esc(ev.name)}</div>
-        <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''}</div></div>
+        <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''}</div></a>
         <div class="progress">
           <div class="p-locked" style="width:${(count('locked') / total) * 100}%"></div>
           <div class="p-paid" style="width:${((count('paid') + count('held')) / total) * 100}%"></div>
@@ -45,7 +47,7 @@ export async function adminHomeView() {
           <div class="stat"><b style="color:var(--spark)">${count('paid')}</b><span class="muted">Perlu dikunci</span></div>
           <div class="stat"><b>${count('free')}</b><span class="muted">Kosong</span></div>
         </div>
-      </a>` : `<div class="card stack"><b>Belum ada event</b><span class="small muted">Cipta event pertama dan jana tapak.</span><a class="btn" href="#/a/tapak">Cipta event</a></div>`}
+      </div>` : `<div class="card stack"><b>Belum ada event</b><span class="small muted">Cipta event pertama dan jana tapak.</span><a class="btn" href="#/a/tapak">Cipta event</a></div>`}
 
       <div class="grid2">
         <a class="card stack" href="#/a/tapak" style="color:var(--text)"><span style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center">${icon('grid', 22)}</span><b>Urus tapak</b><span class="small muted">Gambar pelan, nombor &amp; kunci tapak</span></a>
@@ -63,6 +65,39 @@ export async function adminHomeView() {
       ${recent.length ? `<div class="section-title">Invois terkini <a href="#/a/invois" class="small">Lihat semua</a></div>
       <div class="list">${recent.map(invoiceRow).join('')}</div>` : ''}
     </div>${nav('#/a')}</div>`);
+  const evdel = document.getElementById('evdel');
+  if (evdel) evdel.onclick = () => eventDangerSheet(ev, lots.length, lots.filter((l) => l.status !== 'free').length);
+}
+
+// Padam / batal event, atau padam semua tapak
+function eventDangerSheet(ev, lotCount, takenCount) {
+  const s = openSheet(`<h2>${esc(ev.name)}</h2>
+    <p class="small muted" style="margin:0">${lotCount} tapak${takenCount ? ` · <b style="color:var(--amber-ink)">${takenCount} sudah ditempah/dikunci vendor</b>` : ''}</p>
+    <button class="btn ghost block" data-x="toggle">${ev.is_active ? 'Tutup event (sorok daripada vendor)' : 'Buka semula event kepada vendor'}</button>
+    <button class="btn danger block" data-x="lots"${lotCount ? '' : ' disabled'}>${icon('trash', 18)} Padam semua tapak sahaja</button>
+    <button class="btn danger block" data-x="event">${icon('trash', 18)} Padam event ini terus</button>
+    <p class="small muted" style="margin:0">Event dibatalkan? Pilih <b>Padam event ini terus</b>. Semua tapak dan tempahan akan dipadam. Invois yang dah dikeluarkan kekal dalam senarai Invois.</p>`);
+  s.querySelectorAll('[data-x]').forEach((b) => (b.onclick = async () => {
+    const x = b.dataset.x;
+    try {
+      if (x === 'toggle') {
+        await must(sb.from('events').update({ is_active: !ev.is_active }).eq('id', ev.id));
+        closeSheet(); toast(ev.is_active ? 'Event ditutup' : 'Event dibuka semula'); return go('#/a?t=' + Date.now());
+      }
+      const warn = takenCount ? ` ${takenCount} tapak sudah ditempah atau dikunci vendor. Pemulangan wang (jika ada) perlu dibuat sendiri.` : '';
+      if (x === 'lots') {
+        if (!(await confirmSheet('Padam semua tapak?', `Semua ${lotCount} tapak dan tempahan untuk "${ev.name}" akan dipadam. Event dan gambar pelan kekal.` + warn, 'Padam semua tapak', true))) return;
+        await must(sb.from('lots').delete().eq('event_id', ev.id));
+        toast('Semua tapak dipadam'); return go('#/a/tapak?e=' + ev.id + '&t=' + Date.now());
+      }
+      if (x === 'event') {
+        if (!(await confirmSheet('Padam event terus?', `"${ev.name}" bersama semua tapak, tempahan dan gambar pelan akan dipadam. Tindakan ini tidak boleh dibatalkan.` + warn, 'Ya, padam event', true))) return;
+        if (ev.layout_image_path) await sb.storage.from('layouts').remove([ev.layout_image_path]);
+        await must(sb.from('events').delete().eq('id', ev.id));
+        toast('Event dipadam'); return go('#/a?t=' + Date.now());
+      }
+    } catch (err) { fail(err); }
+  }));
 }
 
 function invoiceRow(i) {
@@ -95,6 +130,7 @@ export async function adminLotsView(params, query) {
       <div class="row">
         <select class="input" id="evsel" aria-label="Pilih event" style="flex:1">${events.map((e) => `<option value="${e.id}"${e.id === ev.id ? ' selected' : ''}>${esc(e.name)}${e.is_active ? '' : ' (ditutup)'}</option>`).join('')}</select>
         <button class="icon-btn" id="editev" aria-label="Edit event">${icon('edit')}</button>
+        <button class="icon-btn" id="delev2" aria-label="Padam event atau tapak" style="color:var(--red)">${icon('trash')}</button>
         <button class="icon-btn" id="newev" aria-label="Event baru">${icon('plus')}</button>
       </div>
       <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''} · ${ev.is_active ? '<span class="badge green">Dibuka kepada vendor</span>' : '<span class="badge gray">Ditutup</span>'}</div>
@@ -108,7 +144,8 @@ export async function adminLotsView(params, query) {
         <button class="btn danger" id="rmlayout"${ev.layout_image_path ? '' : ' disabled'}>${icon('trash', 18)} Buang</button>
       </div>
 
-      <div class="section-title">Tapak ${lots.length ? `<button class="btn ghost sm" id="gen">Jana tapak</button>` : ''}</div>
+      <div class="section-title">Tapak ${lots.length ? `<span class="row" style="gap:8px"><button class="btn ghost sm" id="setprice">Tetapkan harga</button><button class="btn ghost sm" id="gen">Jana tapak</button></span>` : ''}</div>
+      ${lots.some((l) => !(Number(l.price) > 0)) ? `<div class="small" style="color:var(--amber-ink)">${lots.filter((l) => !(Number(l.price) > 0)).length} tapak belum ada harga. Vendor tak boleh pilih tapak tersebut sehingga harga ditetapkan.</div>` : ''}
       ${lots.length ? `
         <div class="legend">
           <span><i class="sw-free"></i>Kosong</span>
@@ -117,15 +154,19 @@ export async function adminLotsView(params, query) {
           <span><i class="sw-locked"></i>Dikunci</span>
         </div>
         ${lotMap(lots, { mode: 'admin', selectedId: query.get('l') })}
-        <div class="small muted">Klik tapak untuk edit, semak resit atau kunci.</div>`
-        : `<div class="card stack"><b>Belum ada tapak</b><span class="small muted">Jana tapak secara automatik (macam susunan kerusi bas), atau tambah satu-satu.</span><button class="btn" id="gen">Jana tapak</button></div>`}
+        <div class="small muted">Klik tapak untuk edit, semak resit atau kunci.</div>
+        ${vendorListHtml(lots)}`
+        : `<div class="card stack"><b>Belum ada tapak</b><span class="small muted">Jana tapak bernombor 01, 02, 03 … secara automatik, atau tambah satu-satu.</span><button class="btn" id="gen">Jana tapak</button></div>`}
     </div>${nav('#/a/tapak')}</div>`);
 
   document.getElementById('evsel').onchange = (e) => go('#/a/tapak?e=' + e.target.value);
   document.getElementById('newev').onclick = () => eventSheet();
   document.getElementById('editev').onclick = () => eventSheet(ev);
+  document.getElementById('delev2').onclick = () => eventDangerSheet(ev, lots.length, lots.filter((l) => l.status !== 'free').length);
   document.getElementById('addlot').onclick = () => lotEditSheet(ev, null, lots, reload);
   document.querySelectorAll('#gen').forEach((b) => (b.onclick = () => generateSheet(ev, lots, reload)));
+  const sp = document.getElementById('setprice');
+  if (sp) sp.onclick = () => priceSheet(ev, lots, reload);
   const img = document.getElementById('layout');
   if (img) img.onclick = () => lightbox(img.src);
 
@@ -153,6 +194,9 @@ export async function adminLotsView(params, query) {
 
   document.querySelectorAll('.lot[data-lot]').forEach((b) => {
     b.onclick = () => lotSheet(ev, lots.find((l) => l.id === b.dataset.lot), lots, reload);
+  });
+  document.querySelectorAll('[data-vl]').forEach((b) => {
+    b.onclick = () => lotSheet(ev, lots.find((l) => l.id === b.dataset.vl), lots, reload);
   });
   const pre = query.get('l') && lots.find((l) => l.id === query.get('l'));
   if (pre) lotSheet(ev, pre, lots, reload);
@@ -197,44 +241,103 @@ function eventSheet(ev) {
 }
 
 function generateSheet(ev, lots, reload) {
+  const nums = lots.map((l) => parseInt(l.code, 10)).filter((n) => !isNaN(n));
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
   const s = openSheet(`<h2>Jana tapak</h2>
-    <p class="small muted" style="margin:0">Tapak dinomborkan ikut lajur &amp; baris (contoh A1, B1 … D6), macam susunan kerusi bas. Tapak sedia ada dengan kod sama akan dilangkau.</p>
+    <p class="small muted" style="margin:0">Tapak dinomborkan 01, 02, 03 … turun ke bawah ikut lajur. Contoh 6 baris: lajur 1 = 01–06, lajur 2 = 07–12. Nama setiap tapak boleh diedit kemudian (klik tapak → Edit).</p>
     <form id="gf" class="stack">
       <div class="grid2">
-        <label class="field">Bilangan lajur (huruf)<input class="input" type="number" name="cols" min="1" max="26" value="4" required></label>
-        <label class="field">Bilangan baris (nombor)<input class="input" type="number" name="rows" min="1" max="60" value="6" required></label>
+        <label class="field">Jumlah tapak<input class="input" type="number" name="total" min="1" max="500" value="40" required></label>
+        <label class="field">Bilangan baris<input class="input" type="number" name="rows" min="1" max="60" value="6" required></label>
       </div>
-      <label class="field">Laluan tengah selepas lajur ke- (0 = tiada)<input class="input" type="number" name="aisle" min="0" max="25" value="2"></label>
+      <label class="field">Mula dari nombor<input class="input" type="number" name="start" min="1" max="999" value="${next}" required></label>
       <div class="grid2">
         <label class="field">Saiz tapak<input class="input" name="size" value="3m x 3m" required></label>
-        <label class="field">Harga (RM)<input class="input" type="number" name="price" min="0" step="0.01" value="150" required></label>
+        <label class="field">Harga (RM)<input class="input" type="number" name="price" min="0" step="0.01" placeholder="Tetapkan kemudian"></label>
       </div>
       <div class="small muted" id="preview"></div>
       <button class="btn block" type="submit">Jana</button>
     </form>`);
   const f = s.querySelector('#gf');
   const pv = s.querySelector('#preview');
+  const pad = (n) => String(n).padStart(2, '0');
   const upd = () => {
-    const c = +f.cols.value || 0, r = +f.rows.value || 0;
-    pv.textContent = c && r ? `${c * r} tapak: ${LETTERS[0]}1 hingga ${LETTERS[c - 1]}${r}` : '';
+    const t = +f.total.value || 0, r = +f.rows.value || 0, st = +f.start.value || 1;
+    pv.textContent = t && r ? `${t} tapak: ${pad(st)} hingga ${pad(st + t - 1)} · ${Math.ceil(t / r)} lajur × ${r} baris` : '';
   };
   f.oninput = upd; upd();
   f.onsubmit = async (e) => {
     e.preventDefault();
-    const cols = +f.cols.value, rows = +f.rows.value, aisle = +f.aisle.value || 0;
+    const total = +f.total.value, rows = +f.rows.value, start = +f.start.value || 1;
     const existing = new Set(lots.map((l) => l.code));
     const out = [];
-    for (let r = 1; r <= rows; r++) {
-      for (let c = 1; c <= cols; c++) {
-        const code = LETTERS[c - 1] + r;
-        if (existing.has(code)) continue;
-        out.push({ event_id: ev.id, code, row_no: r, col_no: c + (aisle && c > aisle ? 1 : 0), size: f.size.value.trim(), price: +f.price.value });
-      }
+    for (let n = start; n < start + total; n++) {
+      const code = pad(n);
+      if (existing.has(code)) continue;
+      out.push({ event_id: ev.id, code, row_no: ((n - 1) % rows) + 1, col_no: Math.floor((n - 1) / rows) + 1, size: f.size.value.trim(), price: +f.price.value || 0 });
     }
-    if (!out.length) return toast('Semua tapak sudah wujud', 'error');
+    if (!out.length) return toast('Semua nombor tapak itu sudah wujud', 'error');
     await busy(f.querySelector('button'), async () => {
       try { await must(sb.from('lots').insert(out)); closeSheet(); toast(`${out.length} tapak dijana`); reload(); }
       catch (err) { fail(err); }
+    });
+  };
+}
+
+// Senarai vendor ikut nombor tapak (admin sahaja)
+const codeSort = (a, b) => {
+  const na = parseInt(a.code, 10), nb = parseInt(b.code, 10);
+  if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+  return String(a.code).localeCompare(String(b.code), 'ms', { numeric: true });
+};
+function vendorListHtml(lots) {
+  const rows = lots.filter((l) => l.vendor && l.status !== 'free').sort(codeSort);
+  const locked = rows.filter((l) => l.status === 'locked').length;
+  return `<div class="section-title" style="margin-top:8px">Senarai vendor <span class="small muted" style="font-family:var(--body);font-weight:600">${locked} disahkan · ${rows.length - locked} menunggu</span></div>
+    <div class="list">${rows.length ? rows.map((l) => `
+      <button class="list-item" data-vl="${l.id}">
+        <span class="code-tile${l.status === 'locked' ? '' : ' amber'}" style="min-width:48px">${esc(l.code)}</span>
+        <span class="grow"><span class="title">${esc(l.vendor.business_name || '-')}</span><span class="small muted">${esc(l.vendor.vendor_code || '')}${l.vendor.owner_name ? ' · ' + esc(l.vendor.owner_name) : ''}${l.vendor.phone ? ' · ' + esc(l.vendor.phone) : ''}</span></span>
+        ${badge(STATUS_LOT, l.status)}
+      </button>`).join('') : '<div class="empty">Belum ada vendor yang menempah tapak.</div>'}</div>`;
+}
+
+// Tetapkan harga beberapa tapak sekaligus
+function priceSheet(ev, lots, reload) {
+  const s = openSheet(`<h2>Tetapkan harga</h2>
+    <form id="pf" class="stack">
+      <label class="field">Harga (RM)<input class="input" type="number" name="price" min="0" step="0.01" required placeholder="Cth: 150"></label>
+      <fieldset style="border:0;margin:0;padding:0" class="stack">
+        <legend class="small" style="font-weight:700;padding:0;margin-bottom:8px">Untuk tapak</legend>
+        <label class="radio-card"><input type="radio" name="scope" value="unset" checked> <span>Yang belum ada harga sahaja</span></label>
+        <label class="radio-card"><input type="radio" name="scope" value="all"> <span>Semua tapak (${lots.length})</span></label>
+        <label class="radio-card"><input type="radio" name="scope" value="range"> <span>Nombor dari … hingga …</span></label>
+      </fieldset>
+      <div class="grid2" id="rng" style="display:none">
+        <label class="field">Dari nombor<input class="input" type="number" name="from" min="1"></label>
+        <label class="field">Hingga nombor<input class="input" type="number" name="to" min="1"></label>
+      </div>
+      <div class="small muted">Tapak yang sudah ditempah atau dikunci tidak akan berubah harga tempahannya.</div>
+      <button class="btn block" type="submit">Simpan harga</button>
+    </form>`);
+  const f = s.querySelector('#pf');
+  f.querySelectorAll('input[name=scope]').forEach((r) => (r.onchange = () => { s.querySelector('#rng').style.display = f.scope.value === 'range' ? 'grid' : 'none'; }));
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const price = +f.price.value;
+    let pick = lots;
+    if (f.scope.value === 'unset') pick = lots.filter((l) => !(Number(l.price) > 0));
+    if (f.scope.value === 'range') {
+      const a = +f.from.value, b = +f.to.value;
+      if (!a || !b) return toast('Isi nombor dari dan hingga', 'error');
+      pick = lots.filter((l) => { const n = parseInt(l.code, 10); return !isNaN(n) && n >= Math.min(a, b) && n <= Math.max(a, b); });
+    }
+    if (!pick.length) return toast('Tiada tapak dipilih', 'error');
+    await busy(f.querySelector('button[type=submit]'), async () => {
+      try {
+        await must(sb.from('lots').update({ price }).in('id', pick.map((l) => l.id)));
+        closeSheet(); toast(`Harga ${rm(price)} ditetapkan untuk ${pick.length} tapak`); reload();
+      } catch (err) { fail(err); }
     });
   };
 }
@@ -243,27 +346,27 @@ function lotEditSheet(ev, lot, lots, reload) {
   const maxRow = lots.reduce((m, l) => Math.max(m, l.row_no), 0);
   const s = openSheet(`<h2>${lot ? 'Edit tapak ' + esc(lot.code) : 'Tambah tapak'}</h2>
     <form id="lf" class="stack">
-      <label class="field">Kod / nombor tapak<input class="input" name="code" required value="${esc(lot?.code)}" placeholder="A1"></label>
+      <label class="field">Nama / nombor tapak<input class="input" name="code" required maxlength="20" value="${esc(lot?.code)}" placeholder="Cth: 01, VVIP, PA"></label>
       <div class="grid2">
         <label class="field">Baris (kedudukan atas–bawah)<input class="input" type="number" name="row_no" min="1" required value="${lot?.row_no ?? maxRow + 1}"></label>
         <label class="field">Lajur (kiri–kanan)<input class="input" type="number" name="col_no" min="1" required value="${lot?.col_no ?? 1}"></label>
       </div>
       <div class="grid2">
         <label class="field">Saiz<input class="input" name="size" required value="${esc(lot?.size ?? '3m x 3m')}"></label>
-        <label class="field">Harga (RM)<input class="input" type="number" name="price" min="0" step="0.01" required value="${lot?.price ?? 150}"></label>
+        <label class="field">Harga (RM)<input class="input" type="number" name="price" min="0" step="0.01" placeholder="Belum ditetapkan" value="${Number(lot?.price) > 0 ? lot.price : ''}"></label>
       </div>
       <button class="btn block" type="submit">Simpan</button>
     </form>`);
   const f = s.querySelector('#lf');
   f.onsubmit = async (e) => {
     e.preventDefault();
-    const row = { code: f.code.value.trim().toUpperCase(), row_no: +f.row_no.value, col_no: +f.col_no.value, size: f.size.value.trim(), price: +f.price.value };
+    const row = { code: f.code.value.trim(), row_no: +f.row_no.value, col_no: +f.col_no.value, size: f.size.value.trim(), price: +f.price.value || 0 };
     await busy(f.querySelector('button'), async () => {
       try {
         if (lot) await must(sb.from('lots').update(row).eq('id', lot.id));
         else await must(sb.from('lots').insert({ ...row, event_id: ev.id }));
         closeSheet(); toast('Tapak disimpan'); reload(lot?.id);
-      } catch (err) { fail(err.code === '23505' ? new Error('Kod tapak sudah wujud') : err); }
+      } catch (err) { fail(err.code === '23505' ? new Error('Nama tapak sudah wujud dalam event ini') : err); }
     });
   };
 }
@@ -284,19 +387,28 @@ async function lotSheet(ev, lot, lots, reload) {
       receiptHtml = `<div class="small muted">Vendor sedang membuat bayaran. Tahan sehingga ${esc(fmtDateTime(lot.held_until))}.</div>`;
     }
   }
-  const vendorHtml = v ? `<div class="card stack" style="background:var(--card-2)">
-      <b>${esc(v.business_name)}</b><span class="small muted">ID ${esc(v.vendor_code || '-')} · ${esc(v.owner_name)}${v.phone ? ' · ' + esc(v.phone) : ''}</span></div>` : '';
+  const vLabel = { locked: '✓ Vendor disahkan', paid: 'Vendor · menunggu pengesahan anda', held: 'Vendor · sedang membuat bayaran' }[lot.status] || 'Vendor';
+  const vendorHtml = v ? `<div class="card stack" style="background:var(--card-2);gap:6px">
+      <span class="small" style="font-weight:700;color:${lot.status === 'locked' ? 'var(--green)' : 'var(--amber-ink)'}">${vLabel}</span>
+      <b style="font-size:17px">${esc(v.business_name)}</b>
+      <span class="small muted">ID ${esc(v.vendor_code || '-')}${v.owner_name ? ' · ' + esc(v.owner_name) : ''}${v.phone ? ' · ' + esc(v.phone) : ''}</span>
+      ${v.phone ? `<a class="btn ghost sm" style="align-self:flex-start" href="${esc(waLink(v.phone, ''))}" target="_blank" rel="noopener">${icon('wa', 16)} WhatsApp vendor</a>` : ''}
+    </div>` : '';
 
   const actions = {
-    free: `<div class="grid2"><button class="btn danger" data-a="delete">${icon('trash', 18)} Buang tapak</button><button class="btn dark" data-a="edit">${icon('edit', 18)} Edit</button></div>`,
+    free: `<button class="btn block" data-a="assign">${icon('lock', 18)} Kunci tapak</button>
+           <div class="grid2"><button class="btn danger" data-a="delete">${icon('trash', 18)} Buang tapak</button><button class="btn dark" data-a="edit">${icon('edit', 18)} Edit</button></div>`,
     held: `<button class="btn danger block" data-a="release">Kosongkan tapak</button>`,
     paid: `<button class="btn block" data-a="lock">${icon('lock', 18)} Sahkan bayaran &amp; kunci tapak</button>
            <button class="btn danger block" data-a="release">Tolak &amp; kosongkan tapak</button>`,
-    locked: `<div class="grid2"><button class="btn ghost" data-a="unlock">${icon('unlock', 18)} Buka kunci</button><button class="btn" data-a="invoice">${icon('file', 18)} Invois</button></div>
-             <button class="btn danger block" data-a="release">Batalkan sewa &amp; kosongkan</button>`
+    locked: v
+      ? `<button class="btn ghost block" data-a="invoice">${icon('file', 18)} Lihat / hantar invois</button>
+             <button class="btn danger block" data-a="release">${icon('unlock', 18)} Buka semula tapak (vendor batal)</button>`
+      : `<div class="card small muted" style="background:var(--card-2)">Dikunci oleh admin, tiada vendor. Vendor tak boleh pilih tapak ini.</div>
+             <button class="btn ghost block" data-a="unlock">${icon('unlock', 18)} Buka kunci (jadikan kosong)</button>`
   };
   const s = openSheet(`
-    <div class="row between"><div><h2>Tapak ${esc(lot.code)}</h2><div class="small muted">${esc(lot.size)} · ${rm(lot.price)}</div></div>${badge(STATUS_LOT, lot.status)}</div>
+    <div class="row between"><div><h2>Tapak ${esc(lot.code)}</h2><div class="small muted">${esc(lot.size)} · ${priceText(lot.price)}</div></div>${badge(STATUS_LOT, lot.status)}</div>
     ${vendorHtml}${receiptHtml}${actions[lot.status]}
     ${lot.status !== 'free' ? `<button class="btn ghost sm" data-a="edit">${icon('edit', 16)} Edit saiz / harga / kedudukan</button>` : ''}`);
   const r = s.querySelector('#rcpt');
@@ -307,6 +419,7 @@ async function lotSheet(ev, lot, lots, reload) {
       const a = btn.dataset.a;
       try {
         if (a === 'edit') return lotEditSheet(ev, lot, lots, reload);
+        if (a === 'assign') return assignLockSheet(ev, lot, reload);
         if (a === 'delete') {
           if (!(await confirmSheet(`Buang tapak ${lot.code}?`, 'Tapak ini akan dipadam.', 'Buang', true))) return;
           await must(sb.from('lots').delete().eq('id', lot.id)); toast('Tapak dibuang'); return reload();
@@ -321,8 +434,8 @@ async function lotSheet(ev, lot, lots, reload) {
         }
         if (a === 'unlock') { await must(sb.rpc('admin_unlock_lot', { p_lot_id: lot.id })); closeSheet(); toast('Kunci dibuka'); return reload(lot.id); }
         if (a === 'release') {
-          if (!(await confirmSheet(`Kosongkan tapak ${lot.code}?`, 'Tempahan vendor akan ditandakan "Ditolak" dan tapak dibuka semula kepada vendor lain. Pemulangan wang (jika ada) perlu dibuat sendiri.', 'Kosongkan', true))) return;
-          await must(sb.rpc('admin_release_lot', { p_lot_id: lot.id })); toast('Tapak dikosongkan'); return reload();
+          if (!(await confirmSheet(`Buka semula tapak ${lot.code}?`, `Tempahan ${v ? v.business_name : 'vendor'} akan dibatalkan dan tapak ${lot.code} jadi KOSONG semula, boleh dipilih vendor lain. Invois lama kekal untuk rekod. Pemulangan wang (jika ada) perlu dibuat sendiri.`, 'Ya, buka semula', true))) return;
+          await must(sb.rpc('admin_release_lot', { p_lot_id: lot.id })); toast(`Tapak ${lot.code} dibuka semula`); return reload();
         }
         if (a === 'invoice') {
           const inv = await must(sb.from('invoices').select('id').eq('vendor_id', lot.vendor_id).eq('event_id', ev.id).order('issued_at', { ascending: false }).limit(1));
@@ -332,6 +445,43 @@ async function lotSheet(ev, lot, lots, reload) {
       } catch (err) { fail(err); }
     };
   });
+}
+
+// Admin kunci tapak kosong: untuk vendor, atau simpan tanpa vendor
+async function assignLockSheet(ev, lot, reload) {
+  const vendors = await must(sb.from('profiles').select('id,vendor_code,business_name').eq('role', 'vendor').eq('is_active', true).order('vendor_code'));
+  const s = openSheet(`<h2>Kunci tapak ${esc(lot.code)}</h2>
+    <div class="small muted">${esc(lot.size)} · ${priceText(lot.price)}</div>
+    <form id="af" class="stack">
+      <label class="field">Untuk vendor
+        <select class="input" name="vendor">
+          <option value="">— Tiada vendor (simpan / tidak dijual) —</option>
+          ${vendors.map((v) => `<option value="${v.id}">${esc(v.vendor_code || '')} · ${esc(v.business_name)}</option>`).join('')}
+        </select></label>
+      <fieldset id="invbox" style="border:0;margin:0;padding:0;display:none" class="stack">
+        <legend class="small" style="font-weight:700;padding:0;margin-bottom:8px">Invois</legend>
+        <label class="radio-card"><input type="radio" name="inv" value="paid" checked> <span>Dah bayar (tunai / terus) — invois "Dibayar"</span></label>
+        <label class="radio-card"><input type="radio" name="inv" value="unpaid"> <span>Belum bayar — invois "Belum bayar" untuk dihantar</span></label>
+        <label class="radio-card"><input type="radio" name="inv" value="none"> <span>Tiada invois</span></label>
+      </fieldset>
+      <button class="btn block" type="submit">${icon('lock', 18)} Kunci tapak</button>
+    </form>`);
+  const f = s.querySelector('#af');
+  const box = s.querySelector('#invbox');
+  f.vendor.onchange = () => { box.style.display = f.vendor.value ? 'flex' : 'none'; };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const vendor = f.vendor.value || null;
+    const inv = vendor ? f.inv.value : 'none';
+    await busy(f.querySelector('button[type=submit]'), async () => {
+      try {
+        const invId = await must(sb.rpc('admin_assign_lock', { p_lot_id: lot.id, p_vendor: vendor, p_invoice: inv }));
+        closeSheet();
+        toast(`Tapak ${lot.code} dikunci${invId ? '. Invois dicipta.' : '.'}`);
+        if (invId) go('#/invois/' + invId); else reload(lot.id);
+      } catch (err) { fail(err); }
+    });
+  };
 }
 
 // =============================================================

@@ -22,7 +22,7 @@ export async function pickLotView(params, query) {
   ]);
   const active = myBookings[0];
   let selected = null;
-  const prices = [...new Set(lots.map((l) => Number(l.price)))];
+  const prices = [...new Set(lots.map((l) => Number(l.price)).filter((p) => p > 0))];
   const priceText = prices.length === 1 ? rm(prices[0]) : prices.length ? `${rm(Math.min(...prices))} – ${rm(Math.max(...prices))}` : '';
   const sizeText = [...new Set(lots.map((l) => l.size))].join(', ');
 
@@ -66,7 +66,7 @@ export async function pickLotView(params, query) {
       document.querySelectorAll('.lot[data-lot]').forEach((b) => {
         b.onclick = () => {
           const l = lots.find((x) => x.id === b.dataset.lot);
-          if (!l || l.status !== 'free') return;
+          if (!l || l.status !== 'free' || !(Number(l.price) > 0)) return;
           selected = selected?.id === l.id ? null : l;
           draw();
         };

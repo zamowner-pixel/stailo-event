@@ -5,6 +5,7 @@ import { APP_NAME, VENDOR_EMAIL_DOMAIN } from './config.js';
 // Video: assets/intro.mp4 (bunyi video = muzik latar). Poster: assets/intro-poster.jpg
 // Phone hanya benarkan video main sendiri tanpa bunyi — bunyi dihidupkan selepas sentuhan pertama.
 let video;
+let unlocked = false; // bunyi dah dibenarkan oleh browser (selepas sentuhan pertama)
 function soundPref() { try { return localStorage.getItem('music') !== 'off'; } catch { return true; } }
 function setSoundPref(on) { try { localStorage.setItem('music', on ? 'on' : 'off'); } catch {} }
 
@@ -14,18 +15,19 @@ function getVideo() {
     video.className = 'intro-video';
     video.src = 'assets/intro.mp4';
     video.poster = 'assets/intro-poster.jpg';
-    video.muted = true;
     video.loop = true;
-    video.autoplay = true;
     video.playsInline = true;
     video.setAttribute('playsinline', '');
     video.setAttribute('aria-hidden', 'true');
     video.preload = 'auto';
-    // Bunyi hidup selepas sentuhan pertama (jika pengguna tak matikan)
+    // Sentuhan pertama di mana-mana = hidupkan bunyi (muzik bermula ON)
     const unlock = () => {
+      unlocked = true;
       if (soundPref() && video.isConnected) { video.muted = false; video.play().catch(() => {}); }
+      document.querySelector('.tap-start')?.remove();
     };
-    document.addEventListener('pointerdown', unlock, { once: true });
+    document.addEventListener('pointerdown', unlock, { once: true, capture: true });
+    document.addEventListener('keydown', unlock, { once: true, capture: true });
   }
   return video;
 }
@@ -33,18 +35,42 @@ function getVideo() {
 function setupIntro(container, btn) {
   const v = getVideo();
   container.prepend(v);
-  v.play().catch(() => {});
   const paint = () => {
-    const on = !v.muted && !v.paused;
+    // Muzik dikira ON jika sedang berbunyi, atau jika pilihan ON dan masih menunggu sentuhan pertama
+    const on = (!v.muted && !v.paused) || (!unlocked && soundPref());
     btn.innerHTML = `${icon(on ? 'sound' : 'mute', 18)}<span>Muzik: ${on ? 'ON' : 'OFF'}</span>`;
     btn.setAttribute('aria-label', on ? 'Matikan muzik' : 'Hidupkan muzik');
   };
   v.onvolumechange = paint; v.onplay = paint; v.onpause = paint;
   btn.onclick = (e) => {
     e.stopPropagation();
-    if (v.muted) { v.muted = false; v.play().catch(() => {}); setSoundPref(true); }
-    else { v.muted = true; setSoundPref(false); }
+    const playing = !v.muted && !v.paused;
+    const pendingOn = !unlocked && soundPref();
+    unlocked = true;
+    if (playing || pendingOn) { v.muted = true; setSoundPref(false); document.querySelector('.tap-start')?.remove(); }
+    else { v.muted = false; v.play().catch(() => {}); setSoundPref(true); }
+    paint();
   };
+
+  if (soundPref() && !unlocked) {
+    // Cuba main terus dengan bunyi (sesetengah phone/apps yang dipasang benarkan)
+    v.muted = false;
+    v.play().then(() => { unlocked = true; paint(); }).catch(() => {
+      // Browser halang bunyi automatik: main tanpa bunyi dahulu, tunjuk "Ketik untuk mula"
+      v.muted = true;
+      v.play().catch(() => {});
+      if (!container.querySelector('.tap-start')) {
+        const t = document.createElement('div');
+        t.className = 'tap-start';
+        t.innerHTML = `<span>${icon('sound', 18)} Ketik di mana-mana untuk mula</span>`;
+        container.appendChild(t);
+      }
+      paint();
+    });
+  } else {
+    v.muted = !soundPref() || !unlocked;
+    v.play().catch(() => {});
+  }
   paint();
 }
 export function stopMusic() { if (video) { video.muted = true; video.pause(); } }

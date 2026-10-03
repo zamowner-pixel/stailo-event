@@ -286,6 +286,10 @@ input[type=radio], input[type=checkbox] { accent-color: var(--gold); width: 20px
 .welcome form .input:focus { outline-color: var(--brand-orange); }
 .welcome label.field { color: #E4E5EA; }
 
+.tap-start { position: absolute; left: 50%; top: 66%; transform: translate(-50%, -50%); z-index: 5; pointer-events: none; }
+.tap-start span { display: inline-flex; align-items: center; gap: 8px; padding: 12px 18px; border-radius: 999px; background: rgba(0,0,0,.55); border: 1px solid rgba(245,197,66,.55); color: #FFE38A; font-weight: 700; font-size: 14px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: tapPulse 1.6s ease-in-out infinite; white-space: nowrap; }
+@keyframes tapPulse { 0%,100% { opacity: .75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+
 /* ---------- Invois / cetak ---------- */
 .invoice { background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .invoice table { width: 100%; border-collapse: collapse; font-size: 13px; }

@@ -6,8 +6,16 @@ import { APP_NAME, VENDOR_EMAIL_DOMAIN } from './config.js';
 // Phone hanya benarkan video main sendiri tanpa bunyi — bunyi dihidupkan selepas sentuhan pertama.
 let video;
 let unlocked = false; // bunyi dah dibenarkan oleh browser (selepas sentuhan pertama)
-function soundPref() { try { return localStorage.getItem('music') !== 'off'; } catch { return true; } }
-function setSoundPref(on) { try { localStorage.setItem('music', on ? 'on' : 'off'); } catch {} }
+// Pilihan muzik hanya untuk sesi ini — setiap kali apps dibuka semula, muzik bermula ON
+function soundPref() { try { return sessionStorage.getItem('music') !== 'off'; } catch { return true; } }
+function setSoundPref(on) { try { sessionStorage.setItem('music', on ? 'on' : 'off'); } catch {} }
+try { localStorage.removeItem('music'); } catch {}
+
+function unmuteSafely(v) {
+  v.muted = false;
+  const p = v.play();
+  if (p) p.catch(() => { v.muted = true; v.play().catch(() => {}); });
+}
 
 function getVideo() {
   if (!video) {
@@ -20,14 +28,17 @@ function getVideo() {
     video.setAttribute('playsinline', '');
     video.setAttribute('aria-hidden', 'true');
     video.preload = 'auto';
-    // Sentuhan pertama di mana-mana = hidupkan bunyi (muzik bermula ON)
-    const unlock = () => {
+    // Sentuhan pertama di mana-mana = hidupkan bunyi (muzik bermula ON).
+    // Guna 'click'/'touchend' kerana hanya event ini dikira "sentuhan sebenar" oleh phone.
+    const unlock = (e) => {
+      if (unlocked) return;
+      if (e && e.target && e.target.closest && e.target.closest('#music')) return; // butang muzik urus sendiri
       unlocked = true;
-      if (soundPref() && video.isConnected) { video.muted = false; video.play().catch(() => {}); }
+      ['click', 'touchend', 'keydown'].forEach((t) => document.removeEventListener(t, unlock, true));
+      if (soundPref() && video.isConnected) unmuteSafely(video);
       document.querySelector('.tap-start')?.remove();
     };
-    document.addEventListener('pointerdown', unlock, { once: true, capture: true });
-    document.addEventListener('keydown', unlock, { once: true, capture: true });
+    ['click', 'touchend', 'keydown'].forEach((t) => document.addEventListener(t, unlock, true));
   }
   return video;
 }
@@ -47,8 +58,10 @@ function setupIntro(container, btn) {
     const playing = !v.muted && !v.paused;
     const pendingOn = !unlocked && soundPref();
     unlocked = true;
-    if (playing || pendingOn) { v.muted = true; setSoundPref(false); document.querySelector('.tap-start')?.remove(); }
-    else { v.muted = false; v.play().catch(() => {}); setSoundPref(true); }
+    document.querySelector('.tap-start')?.remove();
+    if (playing) { v.muted = true; setSoundPref(false); }
+    else if (pendingOn) { unmuteSafely(v); setSoundPref(true); } // tekan pertama pada butang = hidupkan
+    else { unmuteSafely(v); setSoundPref(true); }
     paint();
   };
 
@@ -173,6 +186,7 @@ export function accountView() {
         <label class="field">No. telefon (WhatsApp)<input class="input" type="tel" name="phone" value="${esc(p.phone)}"></label>
         <button class="btn block" type="submit">Simpan</button>
       </form>
+      ${admin ? '' : docsCardHtml(p)}
       <form id="pw" class="card stack">
         <b>Tukar kata laluan</b>
         <label class="field">Kata laluan baru (min. 6 aksara)<input class="input" type="password" name="p1" minlength="6" required autocomplete="new-password"></label>
@@ -208,9 +222,81 @@ export function accountView() {
       catch (err) { fail(err); }
     });
   };
+  if (!admin) bindDocs(p);
   document.querySelectorAll('[data-theme-pick]').forEach((b) => (b.onclick = () => {
     setThemePref(b.dataset.themePick);
     document.querySelectorAll('[data-theme-pick]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   }));
   document.getElementById('logout').onclick = async () => { await sb.auth.signOut(); go('#/'); };
+}
+
+// ---------- Dokumen vendor ----------
+export const DOCS = [
+  { key: 'ssm_path', name: 'Sijil SSM', hint: 'Pendaftaran perniagaan', need: () => true },
+  { key: 'typhoid_path', name: 'Kad suntikan typhoid', hint: 'Untuk peniaga makanan', need: (p) => p.category === 'makanan', foodOnly: true },
+  { key: 'food_cert_path', name: 'Sijil pengendalian makanan', hint: 'Kursus pengendali makanan', need: (p) => p.category === 'makanan', foodOnly: true }
+];
+export const docsComplete = (p) => DOCS.every((d) => !d.need(p) || p[d.key]);
+
+function docsCardHtml(p) {
+  const food = p.category === 'makanan';
+  const list = DOCS.filter((d) => !d.foodOnly || food);
+  return `<div class="card stack">
+    <div class="row between"><b>Dokumen perniagaan</b>${docsComplete(p) ? '<span class="badge green">Lengkap</span>' : '<span class="badge red">Belum lengkap</span>'}</div>
+    <div class="small muted">Kategori: <b>${food ? 'Makanan & minuman' : 'Bukan makanan'}</b> (ditetapkan oleh penganjur). Muat naik <b>gambar</b> sahaja (ambil gambar dokumen dengan jelas).</div>
+    ${list.map((d) => `
+      <div class="row" style="gap:12px;padding:10px 0;border-top:1px solid var(--line-2)">
+        <span class="code-tile${p[d.key] ? '' : ' amber'}" style="min-width:40px;height:40px">${icon(p[d.key] ? 'check' : 'file', 18)}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+          <b class="small" style="font-size:14px">${d.name} ${d.need(p) ? '<span class="badge red" style="margin-left:4px">Wajib</span>' : '<span class="badge gray" style="margin-left:4px">Pilihan</span>'}</b>
+          <span class="small muted">${p[d.key] ? 'Sudah dimuat naik' : d.hint}</span>
+        </span>
+        ${p[d.key] ? `<button class="btn ghost sm" data-doc-view="${d.key}">Lihat</button>` : ''}
+        <label class="btn ${p[d.key] ? 'ghost' : ''} sm" style="cursor:pointer">${p[d.key] ? 'Tukar' : 'Muat naik'}<input type="file" accept="image/*" class="hidden" data-doc-up="${d.key}"></label>
+      </div>`).join('')}
+  </div>`;
+}
+
+function bindDocs(p) {
+  document.querySelectorAll('[data-doc-up]').forEach((inp) => (inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) return toast('Sila muat naik gambar sahaja (JPG / PNG)', 'error');
+    const key = inp.dataset.docUp;
+    toast('Memuat naik…');
+    try {
+      const img = await shrinkImage(file);
+      const path = `${p.id}/${key.replace('_path', '')}-${Date.now()}.jpg`;
+      await must(sb.storage.from('vendor-docs').upload(path, img, { contentType: 'image/jpeg' }));
+      const old = p[key];
+      state.profile = await must(sb.from('profiles').update({ [key]: path }).eq('id', p.id).select().single());
+      if (old) sb.storage.from('vendor-docs').remove([old]);
+      toast('Dokumen disimpan');
+      accountView();
+    } catch (err) { fail(err); }
+  }));
+  document.querySelectorAll('[data-doc-view]').forEach((b) => (b.onclick = async () => {
+    try {
+      const r = await must(sb.storage.from('vendor-docs').createSignedUrl(p[b.dataset.docView], 600));
+      window.open(r.signedUrl, '_blank', 'noopener');
+    } catch (err) { fail(err); }
+  }));
+}
+
+// Kecilkan gambar (maks 1600px, JPEG) supaya cepat dimuat naik
+function shrinkImage(file, max = 1600) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => resolve(b || file), 'image/jpeg', 0.85);
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    im.src = url;
+  });
 }

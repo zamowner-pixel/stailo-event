@@ -4,6 +4,7 @@ import { welcomeView, newPasswordView, accountView, stopMusic } from './views-au
 import { pickLotView, payView, myBookingsView, clearTimers } from './views-vendor.js';
 import { adminHomeView, adminLotsView, adminInvoicesView, invoiceFormView, settingsView, vendorsView } from './views-admin.js';
 import { invoiceView } from './views-invoice.js';
+import { agreementView, agreementsListView, clearAgreementTimers } from './views-agreement.js';
 
 // [corak, paparan, siapa boleh akses: 'guest' | 'any' | 'vendor' | 'admin']
 const routes = [
@@ -13,6 +14,9 @@ const routes = [
   [/^\/kata-laluan$/, newPasswordView, 'any'],
   [/^\/akaun$/, accountView, 'any'],
   [/^\/invois\/(?<id>[0-9a-f-]{36})$/, invoiceView, 'any'],
+  [/^\/perjanjian\/(?<id>[0-9a-f-]{36})$/, agreementView, 'any'],
+  [/^\/perjanjian$/, agreementsListView, 'vendor'],
+  [/^\/a\/perjanjian$/, agreementsListView, 'admin'],
   [/^\/v$/, pickLotView, 'vendor'],
   [/^\/v\/bayar\/(?<id>[0-9a-f-]{36})$/, payView, 'vendor'],
   [/^\/v\/tempahan$/, myBookingsView, 'vendor'],
@@ -38,6 +42,7 @@ async function router() {
   const my = ++routing;
   closeSheet();
   clearTimers();
+  clearAgreementTimers();
   const raw = location.hash.replace(/^#/, '') || '/';
   const [path, qs] = raw.split('?');
   const query = new URLSearchParams(qs || '');

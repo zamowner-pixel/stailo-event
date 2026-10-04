@@ -138,7 +138,7 @@ export function nav(active) {
   const admin = state.profile?.role === 'admin';
   const items = admin
     ? [['#/a', 'home', 'Utama'], ['#/a/tapak', 'grid', 'Tapak'], ['#/a/vendor', 'users', 'Vendor'], ['#/a/invois', 'file', 'Invois'], ['#/a/tetapan', 'gear', 'Tetapan']]
-    : [['#/v', 'grid', 'Pilih tapak'], ['#/v/tempahan', 'ticket', 'Tempahan'], ['#/akaun', 'user', 'Akaun']];
+    : [['#/v', 'grid', 'Pilih tapak'], ['#/v/tempahan', 'ticket', 'Tempahan'], ['#/perjanjian', 'file', 'Perjanjian'], ['#/akaun', 'user', 'Akaun']];
   return `<nav class="bottom-nav" aria-label="Navigasi utama">${items
     .map(([h, i, t]) => `<a href="${h}" class="${active === h ? 'active' : ''}"${active === h ? ' aria-current="page"' : ''}>${icon(i, 22)}${t}</a>`)
     .join('')}</nav>`;
@@ -195,21 +195,26 @@ export async function busy(btn, fn) {
 // ---------- Peta tapak ----------
 // mode 'vendor': lots dari lots_for_event (status, is_mine)
 // mode 'admin' : lots penuh
-export function lotMap(lots, { mode, selectedId } = {}) {
+export function lotMap(lots, { mode, selectedId, selectedIds } = {}) {
+  const isSel = (id) => id === selectedId || (selectedIds && selectedIds.has(id));
   if (!lots.length) return '<div class="empty">Belum ada tapak.</div>';
   const cols = Math.max(...lots.map((l) => l.col_no));
   const cells = lots.map((l) => {
     let cls, label = esc(l.code), aria, disabled = '';
     if (mode === 'vendor') {
       if (l.is_mine) { cls = 'mine'; aria = 'tapak anda'; }
+      else if (l.status === 'locked' && l.business_name) { cls = 'taken named'; aria = 'diambil oleh ' + esc(l.business_name); disabled = ' disabled'; label = `<span>${icon('lock', 10)}${label}</span><small class="lot-name">${esc(l.business_name)}</small>`; }
       else if (l.status !== 'free') { cls = 'taken'; aria = 'sudah diambil'; disabled = ' disabled'; label = icon('lock', 11) + label; }
       else if (!(Number(l.price) > 0)) { cls = 'taken'; aria = 'harga belum ditetapkan'; disabled = ' disabled'; }
-      else if (l.id === selectedId) { cls = 'v-sel'; aria = 'dipilih'; }
+      else if (isSel(l.id)) { cls = 'v-sel'; aria = 'dipilih'; }
       else { cls = 'free'; aria = 'kosong'; }
     } else {
       cls = l.status;
       aria = STATUS_LOT[l.status]?.label || l.status;
-      if (l.status === 'locked') label = icon('lock', 11) + label;
+      if (l.status === 'locked') {
+        label = icon('lock', 11) + label;
+        if (l.vendor?.business_name) { cls += ' named'; label = `<span>${label}</span><small class="lot-name">${esc(l.vendor.business_name)}</small>`; }
+      }
       if (l.id === selectedId) cls += ' sel';
     }
     return `<button class="lot ${cls}" data-lot="${l.id}" style="grid-row:${l.row_no};grid-column:${l.col_no}" aria-label="Tapak ${esc(l.code)}, ${aria}"${disabled}>${label}</button>`;
@@ -220,13 +225,14 @@ export function lotMap(lots, { mode, selectedId } = {}) {
 export const STATUS_LOT = {
   free: { label: 'Kosong', badge: 'gray' },
   held: { label: 'Sedang dibayar', badge: 'amber' },
-  paid: { label: 'Dibayar · perlu kunci', badge: 'amber' },
+  paid: { label: 'Dibayar · perlu sahkan', badge: 'amber' },
+  signing: { label: 'Menunggu tandatangan', badge: 'amber' },
   locked: { label: 'Dikunci', badge: 'dark' }
 };
 export const STATUS_BOOKING = {
   pending_payment: { label: 'Belum bayar', badge: 'amber' },
   pending_verification: { label: 'Menunggu pengesahan', badge: 'amber' },
-  approved: { label: 'Disahkan · dikunci', badge: 'green' },
+  approved: { label: 'Diluluskan', badge: 'green' },
   rejected: { label: 'Ditolak', badge: 'red' },
   expired: { label: 'Tamat masa', badge: 'gray' },
   cancelled: { label: 'Dibatalkan', badge: 'gray' }

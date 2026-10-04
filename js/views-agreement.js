@@ -285,14 +285,14 @@ export async function agreementView({ id }) {
       ${!admin && s.phone ? `<a class="btn ghost sm" style="align-self:flex-start" target="_blank" rel="noopener" href="${esc(waLink(s.phone, `Salam, saya ${v.business_name} (ID ${v.vendor_code}). Masa tandatangan perjanjian lot ${a.lot_codes} telah tamat. Boleh beri masa tambahan?`))}">${icon('wa', 16)} WhatsApp penganjur</a>` : ''}</div>`;
   else banner = `<div class="row no-print ag-timer" id="timer">${icon('clock', 18)}<span></span></div>`;
 
-  const signSlot = signable ? `<canvas id="pad" class="sig-pad" aria-label="Kotak tandatangan"></canvas>` : '';
+  const signSlot = signable ? `<span class="ag-sig-hint" id="sigpreview">Tandatangan anda akan dipaparkan di sini</span>` : '';
 
   render(`<div class="page" style="padding-bottom:24px">
     ${topbar('Perjanjian', { back, sub: `Lot ${esc(a.lot_codes)} · ${esc(a.event_info?.name || '')}`, right: agStatus(a) })}
     <div class="content">
       ${banner}
       ${a.status === 'signed' ? `<button class="btn block no-print" id="pdf">${icon('upload', 18).replace('M12 16V4M7 9l5-5 5 5', 'M12 4v12M7 11l5 5 5-5')} Muat turun PDF</button>` : ''}
-      ${signable ? `<div class="card small no-print" style="background:var(--accent-soft)">Tempahan anda telah <b>diluluskan</b>. Sila baca perjanjian di bawah, semak butiran anda dan turunkan tandatangan di dalam kotak di bahagian bawah untuk mengesahkan lot.</div>` : ''}
+      ${signable ? `<div class="card stack no-print" style="background:var(--accent-soft)"><div class="small">Tempahan anda telah <b>diluluskan</b>. Sila baca perjanjian, semak butiran anda dan tandatangan di bahagian bawah untuk mengesahkan lot.</div><a class="btn" href="#" id="tosign">${icon('edit', 18)} Pergi ke tempat tandatangan</a></div>` : ''}
       ${agreementDoc(a, v, { signSlot })}
       ${signable ? `
       <form class="card stack no-print" id="sf">
@@ -307,7 +307,11 @@ export async function agreementView({ id }) {
         </div>
         <label class="field">No. telefon<input class="input" name="phone" type="tel" required value="${esc(v.phone)}"></label>
         <label class="field">Produk atau menu<textarea class="input" name="products" rows="2" required placeholder="Cth: Nasi lemak, air kelapa">${esc(v.products)}</textarea></label>
-        <div class="small muted">Tandatangan di dalam kotak <b>PENGESAHAN PIHAK VENDOR</b> di atas. <button type="button" class="btn ghost sm" id="clear">Padam tandatangan</button></div>
+        <div class="sign-area" id="signarea">
+          <div class="row between"><b>Tandatangan di sini ${icon('edit', 16)}</b><button type="button" class="btn ghost sm" id="clear">Padam</button></div>
+          <canvas id="pad" class="sig-pad" aria-label="Kotak tandatangan vendor"></canvas>
+          <div class="small muted">Gunakan jari (atau tetikus) untuk menandatangani di dalam kotak putih di atas.</div>
+        </div>
         <label class="row" style="align-items:flex-start;gap:10px;font-size:14px"><input type="checkbox" name="agree" required style="margin-top:3px"> Saya telah membaca, memahami dan bersetuju dengan semua terma dalam perjanjian ini.</label>
         <label class="field">Taip ID vendor anda untuk mengesahkan tandatangan<input class="input" name="code" required autocomplete="off" autocapitalize="characters" placeholder="${esc(v.vendor_code || 'V001')}"></label>
         <button class="btn block" type="submit">${icon('edit', 18)} Tandatangan &amp; sahkan lot</button>
@@ -339,8 +343,18 @@ export async function agreementView({ id }) {
   });
 
   if (!signable) return;
-  const pad = signaturePad(document.getElementById('pad'));
-  document.getElementById('clear').onclick = () => pad.clear();
+  const padEl = document.getElementById('pad');
+  const pad = signaturePad(padEl);
+  const preview = () => {
+    const box = document.getElementById('sigpreview');
+    if (!box) return;
+    box.outerHTML = pad.isEmpty()
+      ? '<span class="ag-sig-hint" id="sigpreview">Tandatangan anda akan dipaparkan di sini</span>'
+      : `<img class="ag-sig" id="sigpreview" src="${pad.toPng()}" alt="Tandatangan anda">`;
+  };
+  padEl.addEventListener('pointerup', preview);
+  document.getElementById('clear').onclick = () => { pad.clear(); preview(); };
+  document.getElementById('tosign').onclick = (e) => { e.preventDefault(); document.getElementById('signarea').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
   const f = document.getElementById('sf');
   // Kemas kini butiran dalam perjanjian semasa menaip
   f.addEventListener('input', () => {
@@ -351,7 +365,7 @@ export async function agreementView({ id }) {
   });
   f.onsubmit = async (e) => {
     e.preventDefault();
-    if (pad.isEmpty()) { document.getElementById('pad').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast('Sila turunkan tandatangan di dalam kotak tandatangan', 'error'); }
+    if (pad.isEmpty()) { document.getElementById('signarea').scrollIntoView({ behavior: 'smooth', block: 'center' }); return toast('Sila turunkan tandatangan di dalam kotak tandatangan', 'error'); }
     const d = Object.fromEntries(new FormData(f));
     if (d.code.trim().toUpperCase() !== String(v.vendor_code || '').toUpperCase()) return toast('ID vendor tidak sepadan', 'error');
     delete d.agree;

@@ -1,11 +1,12 @@
 import {
   sb, state, render, loading, esc, icon, rm, fmtDate, fmtRange, fmtDateTime, toast, fail, go, busy, must,
-  topbar, nav, waLink, loadSettings, confirmSheet
+  topbar, nav, waLink, loadSettings, confirmSheet, planPct, planAmounts
 } from './lib.js';
 
 let timer;
 export function clearAgreementTimers() { clearInterval(timer); }
 
+const TEXT_V2_FROM = '2026-10-04T19:13:12Z'; // butiran penganjur diringkaskan
 const BLANK = '<span class="ag-blank">&nbsp;</span>';
 const val = (v) => (v && String(v).trim() ? `<b>${esc(v)}</b>` : BLANK);
 const CATEGORY = { makanan: 'Makanan & minuman', bukan_makanan: 'Bukan makanan (barangan kering)' };
@@ -28,12 +29,16 @@ export function agStatus(a) {
 }
 
 // ---------- Teks perjanjian (diisi automatik) ----------
+const isOld = (a) => !!(a?.created_at && a.created_at < TEXT_V2_FROM);
+const vendorSign = (v, a) => isOld(a)
+  ? `Nama: ${val(v.owner_name)}<br>Jawatan: ${val(v.rep_title)}<br>Nama Perniagaan: ${val(v.business_name)}`
+  : `Nama Perniagaan: ${val(v.business_name)}<br>No. Pendaftaran SSM: ${val(v.id_no)}`;
 function vendorBlock(v, a) {
   return `<p>Nama Pemilik atau Entiti: ${val(v.owner_name)}<br>
     Nama Perniagaan atau Booth: ${val(v.business_name)}<br>
-    No. Pendaftaran SSM atau Pengenalan: ${val(v.id_no)}<br>
+    No. Pendaftaran SSM: ${val(v.id_no)}<br>
     Alamat: ${val(v.address)}<br>
-    Nama Wakil: ${val(v.rep_name)}<br>
+    ${isOld(a) ? `Nama Wakil: ${val(v.rep_name)}<br>` : ''}
     No. Telefon: ${val(v.phone)}<br>
     Nombor Lot: ${val(a.lot_codes)}<br>
     Kategori Perniagaan: ${val(CATEGORY[v.category] || v.category)}<br>
@@ -43,7 +48,10 @@ function vendorBlock(v, a) {
 export function agreementDoc(a, v, { signSlot = '' } = {}) {
   const e = a.event_info || {}, o = a.org_info || {};
   const t = Number(a.total) || 0;
+  const P = planPct(a.plan), A = planAmounts(a.plan, t);
   const agDate = a.signed_at || a.created_at;
+  // Perjanjian yang dicipta sebelum teks dikemas kini kekal dengan teks asal
+  const oldText = a.created_at && a.created_at < TEXT_V2_FROM;
   const sig = (src) => (src ? `<img class="ag-sig" src="${esc(src)}" alt="Tandatangan">` : BLANK);
   return `<article class="agreement" id="agdoc">
     <h2 class="ag-title">PERJANJIAN PENYERTAAN VENDOR<br><span>STAILO EVENT</span></h2>
@@ -57,7 +65,7 @@ export function agreementDoc(a, v, { signSlot = '' } = {}) {
       Waktu Operasi: ${val(e.op_hours)}<br>
       Tarikh Perjanjian: ${val(fmtDate(agDate))}</p>
 
-    <h3>BUTIRAN PENGANJUR</h3>
+    ${oldText ? `<h3>BUTIRAN PENGANJUR</h3>
     <p>Nama Entiti Berdaftar: ${val(o.entity)}<br>
       Nama Dagangan: <b>STAILO EVENT</b><br>
       No. Pendaftaran Perniagaan: ${val(o.reg_no)}<br>
@@ -65,18 +73,20 @@ export function agreementDoc(a, v, { signSlot = '' } = {}) {
       Nama Wakil: ${val(o.rep_name)}<br>
       Jawatan: ${val(o.rep_title)}<br>
       No. Telefon: ${val(o.phone)}</p>
-    <p>Selepas ini dirujuk sebagai “Penganjur”.</p>
+    <p>Selepas ini dirujuk sebagai “Penganjur”.</p>` : `<p>Nama Penganjur: <b>STAILO EVENT</b><br>
+      No. Pendaftaran Perniagaan: ${val(o.reg_no)}</p>
+    <p>Selepas ini dirujuk sebagai “Penganjur”.</p>`}
 
     <h3>BUTIRAN VENDOR</h3>
     <div id="agvendor">${vendorBlock(v, a)}</div>
     <p>Selepas ini dirujuk sebagai “Vendor”.</p>
 
     <div class="ag-box">
-      <b>Ringkasan sewa tapak (lot ${esc(a.lot_codes)})</b>
+      <b>Ringkasan sewa tapak (lot ${esc(a.lot_codes)}) · pelan ${esc(P.join('/'))}</b>
       <div class="ag-row"><span>Jumlah sewa tapak</span><b>${rm(t)}</b></div>
-      <div class="ag-row"><span>Deposit 40% (pengesahan tempahan)</span><span>${rm(t * 0.4)}</span></div>
-      <div class="ag-row"><span>Ansuran kedua 30% (pertengahan program)</span><span>${rm(t * 0.3)}</span></div>
-      <div class="ag-row"><span>Baki akhir 30% (hari terakhir program)</span><span>${rm(t * 0.3)}</span></div>
+      <div class="ag-row"><span>Deposit ${P[0]}% (pengesahan tempahan)</span><span>${rm(A[0])}</span></div>
+      <div class="ag-row"><span>Ansuran kedua ${P[1]}% (pertengahan program)</span><span>${rm(A[1])}</span></div>
+      <div class="ag-row"><span>Baki akhir ${P[2]}% (hari terakhir program)</span><span>${rm(A[2])}</span></div>
     </div>
 
     <p>Kedua-dua pihak bersetuju dengan terma berikut:</p>
@@ -84,10 +94,10 @@ export function agreementDoc(a, v, { signSlot = '' } = {}) {
     <h3>1. BAYARAN TAPAK DAN PENGESAHAN TEMPAHAN</h3>
     <p>1.1 Jumlah sewa tapak adalah mengikut harga semasa yang dipaparkan dalam aplikasi bagi program dan lot yang dipilih ketika tempahan dibuat.</p>
     <p>1.2 Bayaran hendaklah dijelaskan mengikut pecahan berikut:<br>
-      (a) Bayaran deposit sebanyak 40% daripada jumlah sewa tapak bagi mengesahkan tempahan lot;<br>
-      (b) Bayaran ansuran kedua sebanyak 30% daripada jumlah sewa tapak pada pertengahan tempoh program; dan<br>
-      (c) Bayaran baki akhir sebanyak 30% daripada jumlah sewa tapak pada hari terakhir program.</p>
-    <p>1.3 Tempahan lot hanya disahkan selepas Penganjur menerima deposit 40%. Deposit tersebut merupakan sebahagian daripada jumlah sewa tapak.</p>
+      (a) Bayaran deposit sebanyak ${P[0]}% daripada jumlah sewa tapak bagi mengesahkan tempahan lot;<br>
+      (b) Bayaran ansuran kedua sebanyak ${P[1]}% daripada jumlah sewa tapak pada pertengahan tempoh program; dan<br>
+      (c) Bayaran baki akhir sebanyak ${P[2]}% daripada jumlah sewa tapak pada hari terakhir program.</p>
+    <p>1.3 Tempahan lot hanya disahkan selepas Penganjur menerima deposit ${P[0]}%. Deposit tersebut merupakan sebahagian daripada jumlah sewa tapak.</p>
     <p>1.4 Tarikh kutipan bayaran ansuran kedua dan bayaran baki akhir hendaklah dimaklumkan oleh Penganjur kepada Vendor berdasarkan tempoh program. Vendor hendaklah menyediakan bayaran tersebut secara tunai untuk kutipan oleh wakil Penganjur di booth masing-masing.</p>
     <p>1.5 Vendor hendaklah menjelaskan semua bayaran mengikut jadual yang ditetapkan. Sekiranya Vendor tidak dapat menjelaskan bayaran pada tarikh yang ditetapkan, Vendor wajib memaklumkan dan berbincang dengan Penganjur sebelum tarikh bayaran tersebut bagi mendapatkan pertimbangan untuk penjadualan semula bayaran.</p>
     <p>1.6 Sebarang jadual bayaran baharu adalah tertakluk kepada persetujuan bertulis Penganjur. Permohonan penjadualan semula tidak secara automatik menangguhkan kewajipan bayaran. Selagi persetujuan bertulis belum diberikan, jadual bayaran asal kekal berkuat kuasa.</p>
@@ -194,13 +204,13 @@ export function agreementDoc(a, v, { signSlot = '' } = {}) {
     <div class="ag-signs">
       <div class="ag-sign">
         <h3>PENGESAHAN PIHAK PENGANJUR</h3>
-        <p>Nama Wakil: ${val(o.rep_name)}<br>Jawatan: ${val(o.rep_title)}<br>Bagi Pihak Entiti: ${val(o.entity)}</p>
+        <p>${oldText ? `Nama Wakil: ${val(o.rep_name)}<br>Jawatan: ${val(o.rep_title)}<br>Bagi Pihak Entiti: ${val(o.entity)}` : `Nama Penganjur: <b>STAILO EVENT</b><br>No. Pendaftaran Perniagaan: ${val(o.reg_no)}`}</p>
         <div class="ag-sigbox">${sig(a.org_signature)}</div>
         <p>Tandatangan<br>Tarikh: ${val(fmtDate(a.created_at))}</p>
       </div>
       <div class="ag-sign">
         <h3>PENGESAHAN PIHAK VENDOR</h3>
-        <p id="agvsign">Nama: ${val(v.owner_name)}<br>Jawatan: ${val(v.rep_title)}<br>Nama Perniagaan: ${val(v.business_name)}</p>
+        <p id="agvsign">${vendorSign(v, a)}</p>
         <div class="ag-sigbox">${signSlot || sig(a.signature)}</div>
         <p>Tandatangan<br>Tarikh: ${val(a.signed_at ? fmtDateTime(a.signed_at) : '')}</p>
         ${a.signed_at ? `<p class="ag-stamp">Ditandatangani secara digital melalui ID vendor <b>${esc(v.vendor_code || '')}</b> dalam aplikasi Stailo Event pada ${esc(fmtDateTime(a.signed_at))}.<br>Rujukan: ${esc(a.id)}</p>` : ''}
@@ -299,12 +309,9 @@ export async function agreementView({ id }) {
         <b>Butiran vendor (untuk perjanjian)</b>
         <label class="field">Nama pemilik atau entiti<input class="input" name="owner_name" required value="${esc(v.owner_name)}"></label>
         <label class="field">Nama perniagaan atau booth<input class="input" name="business_name" required value="${esc(v.business_name)}"></label>
-        <label class="field">No. pendaftaran SSM atau kad pengenalan<input class="input" name="id_no" required value="${esc(v.id_no)}"></label>
+        <label class="field">No. pendaftaran SSM<input class="input" name="id_no" required value="${esc(v.id_no)}"></label>
         <label class="field">Alamat<textarea class="input" name="address" rows="2" required>${esc(v.address)}</textarea></label>
-        <div class="grid2">
-          <label class="field">Nama wakil<input class="input" name="rep_name" value="${esc(v.rep_name)}"></label>
-          <label class="field">Jawatan<input class="input" name="rep_title" value="${esc(v.rep_title)}"></label>
-        </div>
+        
         <label class="field">No. telefon<input class="input" name="phone" type="tel" required value="${esc(v.phone)}"></label>
         <label class="field">Produk atau menu<textarea class="input" name="products" rows="2" required placeholder="Cth: Nasi lemak, air kelapa">${esc(v.products)}</textarea></label>
         <div class="sign-area" id="signarea">
@@ -361,7 +368,7 @@ export async function agreementView({ id }) {
     const d = Object.fromEntries(new FormData(f));
     Object.assign(v, d);
     document.getElementById('agvendor').innerHTML = vendorBlock(v, a);
-    document.getElementById('agvsign').innerHTML = `Nama: ${val(v.owner_name)}<br>Jawatan: ${val(v.rep_title)}<br>Nama Perniagaan: ${val(v.business_name)}`;
+    document.getElementById('agvsign').innerHTML = vendorSign(v, a);
   });
   f.onsubmit = async (e) => {
     e.preventDefault();

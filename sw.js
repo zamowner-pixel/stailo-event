@@ -1,10 +1,10 @@
 // Service worker ringkas: simpan fail apps supaya cepat dibuka.
 // Tukar VERSION setiap kali anda kemas kini kod, supaya phone vendor dapat versi baru.
-const VERSION = 'stailo-v15';
+const VERSION = 'stailo-v19';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/lib.js', './js/config.js',
-  './js/views-auth.js', './js/views-vendor.js', './js/views-admin.js', './js/views-invoice.js', './js/views-agreement.js',
+  './js/views-auth.js', './js/views-vendor.js', './js/views-admin.js', './js/views-invoice.js', './js/views-agreement.js', './js/pdf.js', './js/invoice-pdf.js',
   './icons/icon-192.png', './icons/icon-512.png', './assets/intro-poster.jpg'
 ];
 
@@ -33,3 +33,4 @@ self.addEventListener('fetch', (e) => {
       .catch(() => caches.match(e.request).then((r) => r || caches.match('./index.html')))
   );
 });
+

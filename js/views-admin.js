@@ -1,7 +1,7 @@
 import {
   sb, state, render, loading, esc, icon, rm, fmtDate, fmtRange, fmtDateTime, toast, fail, go, busy, must,
   topbar, nav, lotMap, publicUrl, lightbox, loadSettings, fileExt, openSheet, closeSheet, confirmSheet,
-  badge, STATUS_LOT, waLink
+  badge, STATUS_LOT, waLink, scheduleHtml
 } from './lib.js';
 import { DOCS, docsComplete } from './views-auth.js';
 import { signaturePad, isExpired, leftText, signMsg } from './views-agreement.js';
@@ -21,6 +21,7 @@ export async function adminHomeView() {
   const events = await activeEvents();
   const ev = events.find((e) => e.is_active) || events[0];
   let lots = [], recent = [], pendingAg = [];
+  const notifs = await must(sb.from('admin_notifications').select('*').is('read_at', null).order('created_at', { ascending: false }).limit(15));
   pendingAg = await must(sb.from('agreements').select('id,deadline,status,lot_codes,event_id,vendor:profiles(vendor_code,business_name)').eq('status', 'pending').order('deadline'));
   const reqs = await must(sb.from('lot_limit_requests').select('*, vendor:profiles(vendor_code,business_name,phone), event:events(name)').eq('status', 'pending').order('created_at'));
   if (ev) {
@@ -58,6 +59,12 @@ export async function adminHomeView() {
         <a class="card stack" href="#/a/invois/baru" style="color:var(--text)"><span style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center">${icon('file', 22)}</span><b>Buat invois</b><span class="small muted">Hantar terus kepada vendor</span></a>
       </div>
 
+      ${notifs.length ? `<div class="card stack" style="gap:4px">
+        <div class="row between"><b>${icon('bell', 18)} Notifikasi baru (${notifs.length})</b><button class="btn ghost sm" id="readall">Tanda dibaca</button></div>
+        ${notifs.map((n) => `<a class="notif-item" href="${esc(n.url || '#/a')}" data-nid="${n.id}" style="color:var(--text)">
+          <span class="code-tile ${n.kind === 'payment' ? 'amber' : ''}" style="min-width:36px;height:36px">${icon(n.kind === 'payment' ? 'receipt' : n.kind === 'signed' ? 'edit' : 'bell', 16)}</span>
+          <span style="flex:1;min-width:0"><b class="small" style="font-size:14px">${esc(n.title)}</b><span class="small muted" style="display:block">${esc(n.body)}</span><span class="small muted" style="display:block;font-size:11px">${esc(fmtDateTime(n.created_at))}</span></span></a>`).join('')}
+      </div>` : ''}
       <a class="card row" href="#/a/perjanjian" style="color:var(--text)"><span style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center">${icon('edit', 22)}</span><div style="flex:1"><b>Perjanjian vendor</b><div class="small muted">Lihat &amp; muat turun perjanjian yang telah ditandatangani</div></div>${pendingAg.length ? `<span class="badge amber">${pendingAg.length} menunggu</span>` : ''}</a>
 
       ${reqs.length ? `<div class="section-title">Permohonan tapak tambahan</div>
@@ -73,7 +80,7 @@ export async function adminHomeView() {
       <div class="list">${toLock.map((l) => `
         <div class="list-item" style="cursor:default">
           <span class="code-tile amber">${esc(l.code)}</span>
-          <span class="grow"><span class="title">${esc(l.vendor?.business_name || '-')}</span><span class="small muted">${esc(l.vendor?.vendor_code || '')} · Resit dihantar · ${rm(l.price)}</span></span>
+          <span class="grow"><span class="title">${esc(l.vendor?.business_name || '-')}</span><span class="small muted">${esc(l.vendor?.vendor_code || '')} · Resit deposit dihantar</span></span>
           <a class="btn dark sm" href="#/a/tapak?e=${ev.id}&l=${l.id}">Semak</a>
         </div>`).join('')}${pendingAg.map((g) => `
         <a class="list-item" href="#/perjanjian/${g.id}">
@@ -86,6 +93,13 @@ export async function adminHomeView() {
       <div class="list">${recent.map(invoiceRow).join('')}</div>` : ''}
     </div>${nav('#/a')}</div>`);
   document.querySelectorAll('[data-req]').forEach((b) => (b.onclick = () => requestSheet(reqs.find((r) => r.id === b.dataset.req))));
+  const ra = document.getElementById('readall');
+  if (ra) ra.onclick = async () => {
+    try { await must(sb.from('admin_notifications').update({ read_at: new Date().toISOString() }).is('read_at', null)); window.dispatchEvent(new Event('notif-change')); go('#/a?t=' + Date.now()); } catch (err) { fail(err); }
+  };
+  document.querySelectorAll('[data-nid]').forEach((a) => a.addEventListener('click', () => {
+    sb.from('admin_notifications').update({ read_at: new Date().toISOString() }).eq('id', a.dataset.nid).then(() => window.dispatchEvent(new Event('notif-change')));
+  }));
   const evdel = document.getElementById('evdel');
   if (evdel) evdel.onclick = () => eventDangerSheet(ev, lots.length, lots.filter((l) => l.status !== 'free').length);
 }
@@ -449,6 +463,10 @@ async function lotSheet(ev, lot, lots, reload) {
       const others = grp.map((g) => g.lots?.code).filter(Boolean);
       if (others.length > 1) receiptHtml += `<div class="small" style="color:var(--amber-ink)">Satu tempahan bersama tapak: <b>${esc(others.join(', '))}</b>. Semua tapak ini akan dikunci serentak.</div>`;
     }
+    if (b?.group_id) {
+      const sch = await must(sb.from('payment_schedules').select('*').eq('group_id', b.group_id).neq('status', 'cancelled').order('seq'));
+      receiptHtml += scheduleHtml(sch, { admin: lot.status === 'locked' || lot.status === 'signing' });
+    }
     if (b?.receipt_path) {
       const signed = await must(sb.storage.from('receipts').createSignedUrl(b.receipt_path, 600));
       const isPdf = /\.pdf$/i.test(b.receipt_path);
@@ -489,6 +507,13 @@ async function lotSheet(ev, lot, lots, reload) {
     ${lot.status !== 'free' ? `<button class="btn ghost sm" data-a="edit">${icon('edit', 16)} Edit saiz / harga / kedudukan</button>` : ''}`);
   const r = s.querySelector('#rcpt');
   if (r) r.onclick = () => lightbox(r.src);
+  s.querySelectorAll('[data-inst]').forEach((btn) => (btn.onclick = () => busy(btn, async () => {
+    try {
+      await must(sb.rpc('admin_mark_installment', { p_id: btn.dataset.inst, p_paid: btn.dataset.paid === '1' }));
+      toast(btn.dataset.paid === '1' ? 'Bayaran ditanda diterima' : 'Tanda dibatalkan');
+      lotSheet(ev, lot, lots, reload);
+    } catch (err) { fail(err); }
+  })));
 
   s.querySelectorAll('[data-a]').forEach((btn) => {
     btn.onclick = async () => {
@@ -704,15 +729,9 @@ export async function settingsView() {
         <label class="field">Nama pemegang akaun<input class="input" name="account_name" value="${esc(s.account_name)}"></label>
         <label class="field">Had tapak setiap vendor (tanpa kebenaran khas)<input class="input" type="number" name="max_lots" min="1" max="50" value="${esc(s.max_lots ?? 3)}"></label>
         <label class="field">Masa tahan tapak semasa vendor bayar (minit)<input class="input" type="number" name="hold_minutes" min="5" max="1440" value="${esc(s.hold_minutes)}"></label>
-        <b style="margin-top:8px">Butiran penganjur (untuk perjanjian vendor)</b>
-        <label class="field">Nama entiti berdaftar<input class="input" name="org_entity" value="${esc(s.org_entity)}" placeholder="Cth: Stailo Enterprise"></label>
-        <label class="field">No. pendaftaran perniagaan<input class="input" name="org_reg_no" value="${esc(s.org_reg_no)}"></label>
-        <div class="grid2">
-          <label class="field">Nama wakil<input class="input" name="org_rep_name" value="${esc(s.org_rep_name)}"></label>
-          <label class="field">Jawatan<input class="input" name="org_rep_title" value="${esc(s.org_rep_title)}" placeholder="Pengurus"></label>
-        </div>
+        <b style="margin-top:8px">Perjanjian vendor</b>
         <label class="field">Masa untuk vendor tandatangan perjanjian (minit)<input class="input" type="number" name="sign_minutes" min="5" max="10080" value="${esc(s.sign_minutes ?? 60)}"></label>
-        <div class="small muted">Alamat &amp; no. telefon penganjur diambil dari maklumat syarikat di atas.</div>
+        <div class="small muted">No. pendaftaran perniagaan penganjur boleh dikemas kini di menu Akaun.</div>
         <button class="btn block" type="submit">Simpan tetapan</button>
       </form>
 
@@ -792,8 +811,18 @@ function nextCode(vendors) {
   return 'V' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
 }
 function credsMessage(v, password) {
-  const link = location.origin + location.pathname;
-  return `Salam ${v.owner_name || v.business_name},\n\nBerikut maklumat log masuk Stailo Event anda:\n\nID vendor: ${v.vendor_code}\nKata laluan: ${password}\n\nBuka apps: ${link}\n(Di Android, tekan menu ⋮ > "Add to Home screen" untuk simpan sebagai apps.)\n\nSila tukar kata laluan selepas log masuk (menu Akaun).`;
+  return `Assalamualaikum & Salam Sejahtera ${v.owner_name || v.business_name},
+
+Selamat datang ke *Stailo Event*! Akaun vendor anda telah didaftarkan.
+
+*Maklumat Log Masuk*
+ID Vendor : *${v.vendor_code}*
+Kata Laluan : *${password}*
+
+Sebarang pertanyaan, hubungi kami di talian ini.
+
+Terima kasih,
+*Pasukan Stailo Event*`;
 }
 function credsSheet(v, password, title) {
   const s = openSheet(`<h2>${esc(title)}</h2>

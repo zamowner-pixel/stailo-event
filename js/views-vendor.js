@@ -1,6 +1,6 @@
 import {
   sb, state, render, loading, esc, icon, rm, fmtRange, fmtDateTime, toast, fail, go, busy, must,
-  topbar, nav, lotMap, publicUrl, lightbox, loadSettings, fileExt, confirmSheet, badge, STATUS_BOOKING, openSheet, closeSheet
+  topbar, nav, lotMap, PLANS, planPct, planAmounts, scheduleHtml, publicUrl, lightbox, loadSettings, fileExt, confirmSheet, badge, STATUS_BOOKING, openSheet, closeSheet
 } from './lib.js';
 import { isExpired, leftText } from './views-agreement.js';
 
@@ -161,8 +161,21 @@ export async function payView({ id }) {
         <div class="row between" style="border-top:1px solid var(--line-2);padding-top:12px"><b>Jumlah (${items.length} tapak)</b><b style="font-family:var(--display);font-size:22px">${rm(total)}</b></div>
       </div>
 
+      <div class="card stack" id="plans">
+        <b>1. Pilih cara bayaran</b>
+        <div class="small muted">Peratus pertama ialah <b>deposit</b> yang perlu dibayar sekarang. Baki dibayar mengikut jadual.</div>
+        ${PLANS.map((p, i) => { const pc = planPct(p), am = planAmounts(p, total); return `
+        <label class="plan-opt"><input type="radio" name="plan" value="${p}"${i === 2 ? ' checked' : ''}>
+          <span style="flex:1;min-width:0"><b>${pc.join('% · ')}%</b>
+            <span class="small muted" style="display:block">Deposit ${rm(am[0])} · ${rm(am[1])} · ${rm(am[2])}</span>
+            <span class="plan-bars">${pc.map((x) => `<i style="flex:${x}"></i>`).join('')}</span></span>
+        </label>`; }).join('')}
+        <div id="schedprev"></div>
+      </div>
+
       <div class="card stack">
-        <b>1. Buat bayaran</b>
+        <b>2. Bayar deposit</b>
+        <div class="row between" style="background:var(--accent-soft);border-radius:12px;padding:12px 14px"><span class="small">Jumlah perlu dibayar sekarang</span><b id="depamt" style="font-family:var(--display);font-size:22px;white-space:nowrap"></b></div>
         ${qr ? `<img src="${esc(qr)}" alt="Kod DuitNow QR" style="width:220px;margin:0 auto;border-radius:12px">
                <div class="small muted" style="text-align:center">Imbas DuitNow QR dengan apps bank anda</div>` : ''}
         ${s.account_no ? `<div class="stack small" style="background:var(--card-2);border-radius:12px;padding:12px">
@@ -176,8 +189,8 @@ export async function payView({ id }) {
       </div>
 
       <form class="card stack" id="f">
-        <b>2. Muat naik resit</b>
-        <label class="field">Gambar / PDF resit bayaran (satu resit untuk semua tapak)<input class="input" type="file" name="r" accept="image/*,application/pdf" required style="padding-top:12px"></label>
+        <b>3. Muat naik resit deposit</b>
+        <label class="field">Gambar / PDF resit bayaran deposit (satu resit untuk semua tapak)<input class="input" type="file" name="r" accept="image/*,application/pdf" required style="padding-top:12px"></label>
         <button class="btn block" type="submit">${icon('upload', 18)} Hantar resit</button>
         <div class="small muted">Selepas resit disemak, penganjur akan mengesahkan tapak ${esc(codes)} dan invois akan dihantar.</div>
       </form>
@@ -196,6 +209,20 @@ export async function payView({ id }) {
   clearInterval(countdownTimer);
   tick(); countdownTimer = setInterval(tick, 1000);
 
+  const evInfo = ev || {};
+  const mid = (() => { if (!evInfo.start_date) return null; const a = new Date(evInfo.start_date + 'T00:00:00'), b = new Date((evInfo.end_date || evInfo.start_date) + 'T00:00:00'); return new Date(a.getTime() + Math.floor((b - a) / 172800000) * 86400000).toISOString().slice(0, 10); })();
+  const drawPlan = () => {
+    const plan = document.querySelector('input[name=plan]:checked').value;
+    const pc = planPct(plan), am = planAmounts(plan, total);
+    document.getElementById('depamt').textContent = rm(am[0]);
+    document.getElementById('schedprev').innerHTML = scheduleHtml([
+      { seq: 1, plan, percent: pc[0], amount: am[0], label: 'Deposit (bayar sekarang)', status: 'pending' },
+      { seq: 2, plan, percent: pc[1], amount: am[1], label: 'Ansuran kedua (pertengahan program)', due_date: mid, status: 'pending' },
+      { seq: 3, plan, percent: pc[2], amount: am[2], label: 'Bayaran akhir (hari terakhir program)', due_date: evInfo.end_date || evInfo.start_date, status: 'pending' }
+    ]).replace(/<span class="badge gray">Belum<\/span>/g, '');
+  };
+  document.querySelectorAll('input[name=plan]').forEach((r) => (r.onchange = drawPlan));
+  drawPlan();
   const copy = document.getElementById('copy');
   if (copy) copy.onclick = () => navigator.clipboard?.writeText(s.account_no).then(() => toast('No. akaun disalin'));
 
@@ -209,10 +236,11 @@ export async function payView({ id }) {
       try {
         const path = `${state.profile.id}/${groupId || items[0].id}-${Date.now()}.${fileExt(file)}`;
         await must(sb.storage.from('receipts').upload(path, file, { contentType: file.type }));
-        if (groupId) await must(sb.rpc('submit_receipt_group', { p_group: groupId, p_receipt_path: path }));
+        const plan = document.querySelector('input[name=plan]:checked').value;
+        if (groupId) await must(sb.rpc('submit_receipt_group', { p_group: groupId, p_receipt_path: path, p_plan: plan }));
         else await must(sb.rpc('submit_receipt', { p_booking_id: items[0].id, p_receipt_path: path }));
         clearInterval(countdownTimer);
-        toast('Resit dihantar. Menunggu pengesahan penganjur.');
+        toast('Resit deposit dihantar. Menunggu pengesahan penganjur.');
         go('#/v/tempahan');
       } catch (err) { fail(err); }
     });
@@ -230,11 +258,20 @@ export async function payView({ id }) {
 // ---------- V3: Tempahan & invois saya ----------
 export async function myBookingsView() {
   loading();
-  const [bookings, invoices, ags] = await Promise.all([
+  const [bookings, invoices, ags, scheds] = await Promise.all([
     must(sb.from('bookings').select('*, lots(id,code,status), events(name,start_date,end_date)').eq('vendor_id', state.profile.id).order('created_at', { ascending: false }).limit(30)),
     must(sb.from('invoices').select('*').eq('vendor_id', state.profile.id).order('issued_at', { ascending: false }).limit(30)),
-    must(sb.from('agreements').select('id,status,lot_ids').eq('vendor_id', state.profile.id).in('status', ['pending', 'signed']))
+    must(sb.from('agreements').select('id,status,lot_ids').eq('vendor_id', state.profile.id).in('status', ['pending', 'signed'])),
+    must(sb.from('payment_schedules').select('*').eq('vendor_id', state.profile.id).neq('status', 'cancelled').order('seq'))
   ]);
+  const groups = [...new Set(scheds.map((r) => r.group_id))];
+  const schedCards = groups.map((g) => {
+    const rows = scheds.filter((r) => r.group_id === g);
+    const bk = bookings.filter((b) => b.group_id === g);
+    const codes = bk.map((b) => b.lots?.code).filter(Boolean).sort().join(', ');
+    return `<div class="card stack"><div><b>${esc(bk[0]?.events?.name || 'Event')}</b><div class="small muted">Lot ${esc(codes)}</div></div>${scheduleHtml(rows)}
+      <div class="small muted">Ansuran kedua dan bayaran akhir dikutip secara tunai oleh wakil penganjur di booth anda.</div></div>`;
+  }).join('');
   const agFor = (b) => ags.find((a) => (a.lot_ids || []).includes(b.lot_id));
   const bHref = (b) => {
     if (b.status === 'pending_payment') return '#/v/bayar/' + (b.group_id || b.id);
@@ -249,6 +286,7 @@ export async function myBookingsView() {
   };
   render(`<div class="page">${topbar('Tempahan saya')}
     <div class="content">
+      ${schedCards ? `<div class="section-title">Jadual bayaran</div>${schedCards}` : ''}
       <div class="section-title">Tempahan tapak</div>
       <div class="list">${bookings.length ? bookings.map((b) => `
         <a class="list-item" href="${bHref(b)}">

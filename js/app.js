@@ -1,4 +1,4 @@
-import { sb, state, render, esc, go, errMsg, must, closeSheet } from './lib.js';
+import { sb, state, render, esc, go, errMsg, must, closeSheet, toast } from './lib.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { welcomeView, newPasswordView, accountView, stopMusic } from './views-auth.js';
 import { pickLotView, payView, myBookingsView, clearTimers } from './views-vendor.js';
@@ -66,6 +66,7 @@ async function router() {
     }
     if (who !== 'guest') stopMusic();
     await view(m.groups || {}, query);
+    if (state.profile?.role === 'admin') { startAdminLive(); updateBadge(); }
   } catch (err) {
     console.error(err);
     if (my !== routing) return;
@@ -76,6 +77,54 @@ async function router() {
     const lo = document.getElementById('lo');
     if (lo) lo.onclick = async () => { await sb.auth.signOut(); go('#/'); };
   }
+}
+
+// ---------- Notifikasi admin dalam apps (serta-merta) ----------
+let liveChannel = null;
+async function refreshUnread() {
+  try {
+    const { count } = await sb.from('admin_notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
+    state.unread = count || 0;
+  } catch { state.unread = 0; }
+  updateBadge();
+}
+function updateBadge() {
+  const a = document.querySelector('.bottom-nav a[href="#/a"]');
+  if (!a) return;
+  a.querySelector('.nav-dot')?.remove();
+  if (state.unread > 0) a.insertAdjacentHTML('beforeend', `<i class="nav-dot">${state.unread > 9 ? '9+' : state.unread}</i>`);
+}
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1320].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.start(t); o.stop(t + 0.17);
+    });
+  } catch {}
+}
+function startAdminLive() {
+  if (liveChannel || typeof sb.channel !== 'function') return;
+  refreshUnread();
+  window.addEventListener('notif-change', refreshUnread);
+  liveChannel = sb.channel('admin-notifications')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'admin_notifications' }, (p) => {
+      const n = p.new || {};
+      beep();
+      navigator.vibrate?.([120, 60, 120]);
+      toast(`🔔 ${n.title || 'Notifikasi'} — ${n.body || ''}`);
+      state.unread = (state.unread || 0) + 1;
+      updateBadge();
+      if (location.hash === '#/a' || location.hash.startsWith('#/a?')) go('#/a?t=' + Date.now());
+    })
+    .subscribe();
+}
+function stopAdminLive() {
+  if (liveChannel) { sb.removeChannel?.(liveChannel); liveChannel = null; }
+  state.unread = 0;
 }
 
 async function start() {
@@ -95,6 +144,7 @@ async function start() {
     if ((session?.user?.id || null) !== (was || null)) {
       state.profile = null;
       state.settings = null;
+      stopAdminLive();
       // '#/' → router muatkan profil, kemudian halakan ke halaman admin / vendor
       go('#/');
     }

@@ -1,4 +1,5 @@
-import { sb, state, render, loading, esc, icon, rm, fmtDate, fmtDateTime, toast, fail, go, must, topbar, waLink, loadSettings, confirmSheet } from './lib.js';
+import { sb, state, render, loading, esc, icon, rm, fmtDate, fmtDateTime, toast, fail, go, must, busy, topbar, waLink, loadSettings, confirmSheet } from './lib.js';
+import { invoicePdf, invoiceFileName, sharePdfBlob, downloadBlob } from './invoice-pdf.js';
 
 export async function invoiceView({ id }) {
   loading();
@@ -8,13 +9,12 @@ export async function invoiceView({ id }) {
   ]);
   const admin = state.profile.role === 'admin';
   const v = inv.vendor || {};
-  const link = location.origin + location.pathname + '#/invois/' + inv.id;
   const paid = inv.status === 'paid';
   const msg = `Salam ${v.owner_name || v.business_name || ''},\n\nIni invois ${inv.invoice_no} daripada ${s.company_name}.\n` +
     inv.items.map((x) => `• ${x.desc}: ${rm(x.amount)}`).join('\n') +
     `\nJumlah: ${rm(inv.total)}\nStatus: ${paid ? 'DIBAYAR' : 'BELUM DIBAYAR'}\n` +
     (!paid && s.account_no ? `\nBayaran ke: ${s.bank_name} ${s.account_no} (${s.account_name})\n` : '') +
-    `\nLihat invois: ${link}\n\nTerima kasih!`;
+    `\nInvois PDF dilampirkan.\n\nTerima kasih!`;
 
   render(`<div class="page" style="padding-bottom:20px">
     ${topbar('Invois', { back: admin ? '#/a/invois' : '#/v/tempahan', right: admin ? `<a class="btn ghost sm" href="#/a/invois/${inv.id}/edit">${icon('edit', 16)} Edit</a>` : '' })}
@@ -40,18 +40,30 @@ export async function invoiceView({ id }) {
       </div>
 
       <div class="stack no-print">
-        ${admin ? `<a class="btn wa block" href="${esc(waLink(v.phone, msg))}" target="_blank" rel="noopener">${icon('wa', 18)} Hantar melalui WhatsApp</a>` : ''}
-        <div class="grid2">
-          ${admin ? `<a class="btn ghost" href="mailto:${esc(String(v.email || '').endsWith('.stailoevent.app') ? '' : v.email || '')}?subject=${encodeURIComponent('Invois ' + inv.invoice_no)}&body=${encodeURIComponent(msg)}">${icon('mail', 18)} Emel</a>` : ''}
-          <button class="btn ghost" id="print" style="${admin ? '' : 'grid-column:span 2'}">${icon('print', 18)} Simpan PDF / Cetak</button>
-        </div>
+        ${admin ? `<button class="btn wa block" id="sharepdf">${icon('wa', 18)} Hantar PDF (WhatsApp / emel)</button>` : ''}
+        <button class="btn ghost block" id="dlpdf">${icon('file', 18)} Muat turun PDF</button>
+        ${admin ? '<div class="small muted" style="text-align:center">Pilih WhatsApp dan nama vendor dalam menu kongsi. PDF akan dilampirkan terus.</div>' : ''}
         ${admin ? `<div class="grid2">
           <button class="btn ghost" id="toggle">${paid ? 'Tanda belum bayar' : 'Tanda dibayar'}</button>
           <button class="btn danger" id="del">${icon('trash', 18)} Padam</button></div>` : ''}
       </div>
     </div></div>`);
 
-  document.getElementById('print').onclick = () => window.print();
+  // Sediakan PDF sebaik halaman dibuka
+  let pdfBlob = null;
+  const pdfReady = invoicePdf(inv, s).then((b) => (pdfBlob = b)).catch((err) => { console.error(err); });
+  const name = invoiceFileName(inv);
+  const dl = document.getElementById('dlpdf');
+  dl.onclick = async () => { await pdfReady; if (pdfBlob) downloadBlob(pdfBlob, name); else toast('PDF gagal dijana', 'error'); };
+  const sh = document.getElementById('sharepdf');
+  if (sh) sh.onclick = async () => {
+    if (!pdfBlob) { toast('Menyediakan PDF… cuba lagi sebentar'); await pdfReady; return; }
+    const r = await sharePdfBlob(pdfBlob, name, inv.invoice_no, msg);
+    if (r === 'downloaded') {
+      toast('PDF dimuat turun. Lampirkan PDF tersebut dalam WhatsApp vendor.');
+      if (v.phone) window.open(waLink(v.phone, msg), '_blank', 'noopener');
+    }
+  };
   if (!admin) return;
   document.getElementById('toggle').onclick = async () => {
     try {

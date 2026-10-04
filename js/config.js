@@ -14,3 +14,8 @@ export const APP_NAME = 'Stailo Event';
 
 // Jangan ubah — mesti sama dengan fungsi vendor_email() dalam supabase/schema.sql
 export const VENDOR_EMAIL_DOMAIN = 'vendor.stailoevent.app';
+
+// Alamat apps yang dihantar kepada vendor (cth 'https://app.stailoevent.com').
+// Biarkan kosong untuk guna alamat semasa secara automatik.
+export const APP_URL = '';
+

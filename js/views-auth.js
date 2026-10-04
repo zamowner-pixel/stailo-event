@@ -1,4 +1,4 @@
-import { sb, state, render, esc, icon, toast, fail, go, busy, must, topbar, nav, getThemePref, setThemePref } from './lib.js';
+import { sb, state, render, esc, icon, toast, fail, go, busy, must, loadSettings, topbar, nav, getThemePref, setThemePref } from './lib.js';
 import { APP_NAME, VENDOR_EMAIL_DOMAIN } from './config.js';
 
 // ---------- Video intro + muzik ----------
@@ -170,9 +170,10 @@ export function newPasswordView() {
 }
 
 // ---------- Akaun (vendor & admin) ----------
-export function accountView() {
+export async function accountView() {
   const p = state.profile;
   const admin = p.role === 'admin';
+  const st = admin ? await loadSettings(true) : null;
   render(`<div class="page">${topbar('Akaun', { back: admin ? '#/a/tetapan' : '' })}
     <div class="content">
       <div class="card row" style="gap:14px">
@@ -186,7 +187,13 @@ export function accountView() {
         <label class="field">No. telefon (WhatsApp)<input class="input" type="tel" name="phone" value="${esc(p.phone)}"></label>
         <button class="btn block" type="submit">Simpan</button>
       </form>
-      ${admin ? '' : docsCardHtml(p)}
+      ${admin ? `<form id="org" class="card stack">
+        <b>Penganjur (dalam perjanjian vendor)</b>
+        <div class="small muted">Nama penganjur: <b>STAILO EVENT</b></div>
+        <label class="field">No. pendaftaran perniagaan<input class="input" name="org_reg_no" value="${esc(st.org_reg_no || '')}" placeholder="Cth: 202403123456 (SA0123456-X)"></label>
+        <button class="btn block" type="submit">Simpan</button>
+        <div class="small muted">Dimasukkan ke perjanjian yang diluluskan selepas ini.</div>
+      </form>` : docsCardHtml(p)}
       <form id="pw" class="card stack">
         <b>Tukar kata laluan</b>
         <label class="field">Kata laluan baru (min. 6 aksara)<input class="input" type="password" name="p1" minlength="6" required autocomplete="new-password"></label>
@@ -201,6 +208,7 @@ export function accountView() {
         <div class="small muted">Cerah: oren &amp; putih · Gelap: emas &amp; hitam</div>
       </div>
       <button class="btn ghost block" id="logout">${icon('logout')} Log keluar</button>
+      <div class="small muted" style="text-align:center;font-size:11px">© ${new Date().getFullYear()} Stailo Event. Hak cipta terpelihara.</div>
     </div>${admin ? '' : nav('#/akaun')}</div>`);
   const f = document.getElementById('f');
   f.onsubmit = async (e) => {
@@ -223,6 +231,14 @@ export function accountView() {
     });
   };
   if (!admin) bindDocs(p);
+  const org = document.getElementById('org');
+  if (org) org.onsubmit = async (e) => {
+    e.preventDefault();
+    await busy(org.querySelector('button'), async () => {
+      try { state.settings = await must(sb.from('settings').update({ org_reg_no: org.org_reg_no.value.trim() }).eq('id', 1).select().single()); toast('No. pendaftaran disimpan'); }
+      catch (err) { fail(err); }
+    });
+  };
   document.querySelectorAll('[data-theme-pick]').forEach((b) => (b.onclick = () => {
     setThemePref(b.dataset.themePick);
     document.querySelectorAll('[data-theme-pick]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
@@ -243,7 +259,13 @@ function docsCardHtml(p) {
   const list = DOCS.filter((d) => !d.foodOnly || food);
   return `<div class="card stack">
     <div class="row between"><b>Dokumen perniagaan</b>${docsComplete(p) ? '<span class="badge green">Lengkap</span>' : '<span class="badge red">Belum lengkap</span>'}</div>
-    <div class="small muted">Kategori: <b>${food ? 'Makanan & minuman' : 'Bukan makanan'}</b> (ditetapkan oleh penganjur). Muat naik <b>gambar</b> sahaja (ambil gambar dokumen dengan jelas).</div>
+    <div class="field" style="gap:6px">Kategori perniagaan
+      <div class="seg" role="group" aria-label="Kategori perniagaan" style="grid-template-columns:1fr 1fr">
+        <button type="button" data-cat="makanan" aria-pressed="${food}">Makanan</button>
+        <button type="button" data-cat="bukan_makanan" aria-pressed="${!food}">Bukan Makanan</button>
+      </div>
+    </div>
+    <div class="small muted">${food ? 'Makanan: SSM, kad typhoid dan sijil pengendalian makanan wajib.' : 'Bukan makanan: SSM wajib.'} Muat naik <b>gambar</b> sahaja (ambil gambar dokumen dengan jelas).</div>
     ${list.map((d) => `
       <div class="row" style="gap:12px;padding:10px 0;border-top:1px solid var(--line-2)">
         <span class="code-tile${p[d.key] ? '' : ' amber'}" style="min-width:40px;height:40px">${icon(p[d.key] ? 'check' : 'file', 18)}</span>
@@ -253,11 +275,32 @@ function docsCardHtml(p) {
         </span>
         ${p[d.key] ? `<button class="btn ghost sm" data-doc-view="${d.key}">Lihat</button>` : ''}
         <label class="btn ${p[d.key] ? 'ghost' : ''} sm" style="cursor:pointer">${p[d.key] ? 'Tukar' : 'Muat naik'}<input type="file" accept="image/*" class="hidden" data-doc-up="${d.key}"></label>
-      </div>`).join('')}
+      </div>${d.key === 'ssm_path' ? `
+      <form id="ssmno" class="stack" style="gap:6px;padding-bottom:6px">
+        <label class="field">No. pendaftaran SSM
+          <div class="row" style="gap:8px"><input class="input" name="id_no" value="${esc(p.id_no || '')}" placeholder="Cth: 202303123456" style="flex:1" autocomplete="off"><button class="btn sm" type="submit">Simpan</button></div></label>
+        <span class="small muted" id="ssmstat">${p.id_no ? 'Sila pastikan nombor ini sama seperti dalam sijil SSM anda.' : 'Nombor akan dibaca automatik daripada gambar SSM yang anda muat naik.'}</span>
+      </form>` : ''}`).join('')}
   </div>`;
 }
 
 function bindDocs(p) {
+  document.querySelectorAll('[data-cat]').forEach((b) => (b.onclick = async () => {
+    if (b.dataset.cat === p.category) return;
+    try {
+      state.profile = await must(sb.from('profiles').update({ category: b.dataset.cat }).eq('id', p.id).select().single());
+      toast(b.dataset.cat === 'makanan' ? 'Kategori: Makanan' : 'Kategori: Bukan Makanan');
+      accountView();
+    } catch (err) { fail(err); }
+  }));
+  const ssmf = document.getElementById('ssmno');
+  if (ssmf) ssmf.onsubmit = async (e) => {
+    e.preventDefault();
+    await busy(ssmf.querySelector('button'), async () => {
+      try { state.profile = await must(sb.from('profiles').update({ id_no: ssmf.id_no.value.trim() }).eq('id', p.id).select().single()); toast('No. pendaftaran SSM disimpan'); }
+      catch (err) { fail(err); }
+    });
+  };
   document.querySelectorAll('[data-doc-up]').forEach((inp) => (inp.onchange = async () => {
     const file = inp.files[0];
     if (!file) return;
@@ -272,7 +315,8 @@ function bindDocs(p) {
       state.profile = await must(sb.from('profiles').update({ [key]: path }).eq('id', p.id).select().single());
       if (old) sb.storage.from('vendor-docs').remove([old]);
       toast('Dokumen disimpan');
-      accountView();
+      await accountView();
+      if (key === 'ssm_path') readSsmNumber(img);
     } catch (err) { fail(err); }
   }));
   document.querySelectorAll('[data-doc-view]').forEach((b) => (b.onclick = async () => {
@@ -281,6 +325,47 @@ function bindDocs(p) {
       window.open(r.signedUrl, '_blank', 'noopener');
     } catch (err) { fail(err); }
   }));
+}
+
+// ---------- Baca no. pendaftaran SSM daripada gambar (OCR di phone vendor) ----------
+// Format baru: 12 digit, cth 202303123456 (tahun + jenis entiti 01–06 + 6 digit)
+// Format lama: cth SA0123456-X, 001234567-K, 1234567-T
+export function findSsmNumber(text) {
+  const t = String(text || '').toUpperCase().replace(/[–—_]/g, '-');
+  const fixDigits = (x) => x.replace(/[OQD]/g, '0').replace(/[IL|]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
+  let modern = null, old = null;
+  // Cari jujukan 12 digit (boleh ada ruang / sengkang), betulkan huruf yang tersilap baca
+  const cand = t.match(/[0-9OQDILSBZ|][0-9OQDILSBZ|\s-]{10,20}[0-9OQDILSBZ|]/g) || [];
+  for (const c of cand) {
+    const d = fixDigits(c).replace(/[\s-]/g, '');
+    const m = d.match(/(19[5-9]\d|20[0-4]\d)(0[1-6])(\d{6})/);
+    if (m && /\d/.test(c)) { modern = m[0]; break; }
+  }
+  const o = t.match(/\b([A-Z]{2}\s?\d{7}|\d{6,9})\s?-\s?([A-Z])\b/);
+  if (o) old = (o[1].replace(/\s/g, '') + '-' + o[2]);
+  if (modern && old) return `${modern} (${old})`;
+  return modern || old || '';
+}
+
+let ocrLib;
+async function readSsmNumber(blob) {
+  const stat = document.getElementById('ssmstat');
+  const input = document.querySelector('#ssmno input[name=id_no]');
+  const say = (m) => { if (stat) stat.textContent = m; };
+  try {
+    say('Membaca nombor pendaftaran daripada gambar… (kali pertama mungkin ambil masa 10–20 saat)');
+    ocrLib = ocrLib || (await import('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js')).default;
+    const { data } = await ocrLib.recognize(blob, 'eng');
+    const no = findSsmNumber(data?.text);
+    if (!no) { say('Nombor pendaftaran tidak dapat dibaca daripada gambar. Sila taip sendiri dan tekan Simpan.'); input?.focus(); return; }
+    state.profile = await must(sb.from('profiles').update({ id_no: no }).eq('id', state.profile.id).select().single());
+    if (input) input.value = no;
+    say('Nombor dikesan daripada gambar. Sila semak — jika salah, betulkan dan tekan Simpan.');
+    toast('No. pendaftaran SSM dikesan: ' + no);
+  } catch (err) {
+    console.error(err);
+    say('Gagal membaca gambar secara automatik. Sila taip nombor pendaftaran dan tekan Simpan.');
+  }
 }
 
 // Kecilkan gambar (maks 1600px, JPEG) supaya cepat dimuat naik

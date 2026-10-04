@@ -127,6 +127,7 @@ const P = {
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
   sound: '<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
   mute: '<path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   receipt: '<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/>'
 };
 export function icon(name, size = 20) {
@@ -238,3 +239,29 @@ export const STATUS_BOOKING = {
   cancelled: { label: 'Dibatalkan', badge: 'gray' }
 };
 export const badge = (map, s) => `<span class="badge ${map[s]?.badge || 'gray'}">${esc(map[s]?.label || s)}</span>`;
+
+// ---------- Pelan bayaran (deposit + 2 ansuran) ----------
+export const PLANS = ['20-40-40', '30-30-40', '40-30-30'];
+export const planPct = (plan) => String(plan || '40-30-30').split('-').map(Number);
+export function planAmounts(plan, total) {
+  const [a, b] = planPct(plan);
+  const d = Math.round(total * a) / 100, i2 = Math.round(total * b) / 100;
+  return [d, i2, Math.round((total - d - i2) * 100) / 100];
+}
+const SCHED_BADGE = { paid: ['green', 'Dibayar'], verifying: ['amber', 'Disemak'], pending: ['gray', 'Belum'], cancelled: ['gray', 'Dibatalkan'] };
+export function scheduleHtml(rows, { admin = false } = {}) {
+  if (!rows?.length) return '';
+  const list = [...rows].sort((a, b) => a.seq - b.seq);
+  const paid = list.filter((r) => r.status === 'paid').reduce((s, r) => s + Number(r.amount), 0);
+  const total = list.reduce((s, r) => s + Number(r.amount), 0);
+  return `<div class="sched">
+    <div class="row between small"><b>Jadual bayaran · ${esc(list[0].plan)}</b><span class="muted">Baki ${rm(total - paid)}</span></div>
+    ${list.map((r) => `<div class="sched-row">
+      <span class="sched-pct">${r.percent}%</span>
+      <span style="flex:1;min-width:0"><b class="small">${esc(r.label)}</b><span class="small muted" style="display:block">${rm(r.amount)}${r.status === 'paid' && r.paid_at ? ' · dibayar ' + esc(fmtDate(r.paid_at)) : r.due_date ? ' · ' + esc(fmtDate(r.due_date)) : ''}</span></span>
+      ${admin && r.seq > 1 && r.status !== 'cancelled'
+        ? `<button class="btn ${r.status === 'paid' ? 'ghost' : 'dark'} sm" data-inst="${r.id}" data-paid="${r.status === 'paid' ? '0' : '1'}">${r.status === 'paid' ? 'Batal tanda' : 'Tanda diterima'}</button>`
+        : `<span class="badge ${SCHED_BADGE[r.status]?.[0] || 'gray'}">${SCHED_BADGE[r.status]?.[1] || r.status}</span>`}
+    </div>`).join('')}
+  </div>`;
+}

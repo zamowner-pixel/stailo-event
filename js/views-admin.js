@@ -19,40 +19,47 @@ async function activeEvents() {
 export async function adminHomeView() {
   loading();
   const events = await activeEvents();
-  const ev = events.find((e) => e.is_active) || events[0];
   let lots = [], recent = [], pendingAg = [];
   const notifs = await must(sb.from('admin_notifications').select('*').is('read_at', null).order('created_at', { ascending: false }).limit(15));
   pendingAg = await must(sb.from('agreements').select('id,deadline,status,lot_codes,event_id,vendor:profiles(vendor_code,business_name)').eq('status', 'pending').order('deadline'));
   const reqs = await must(sb.from('lot_limit_requests').select('*, vendor:profiles(vendor_code,business_name,phone), event:events(name)').eq('status', 'pending').order('created_at'));
-  if (ev) {
+  if (events.length) {
     [lots, recent] = await Promise.all([
-      must(sb.from('lots').select('id,code,status,price,vendor:profiles(vendor_code,business_name,phone)').eq('event_id', ev.id).order('row_no').order('col_no')),
+      must(sb.from('lots').select('id,code,status,price,event_id,vendor:profiles(vendor_code,business_name,phone)').order('row_no').order('col_no')),
       must(sb.from('invoices').select('id,invoice_no,total,status,vendor:profiles(business_name)').order('issued_at', { ascending: false }).limit(5))
     ]);
   }
-  const count = (s) => lots.filter((l) => l.status === s).length;
-  const total = lots.length || 1;
+  // Susun: event dibuka dahulu, kemudian ikut tarikh mula
+  events.sort((a, b) => (b.is_active - a.is_active) || String(a.start_date || '9999').localeCompare(String(b.start_date || '9999')));
+  const evName = (id) => events.find((e) => e.id === id)?.name || '';
   const toLock = lots.filter((l) => l.status === 'paid');
+  const evCard = (ev) => {
+    const el = lots.filter((l) => l.event_id === ev.id);
+    const c = (st) => el.filter((l) => l.status === st).length;
+    const total = el.length || 1;
+    return `<div class="card ${ev.is_active ? 'dark ' : ''}stack" style="position:relative">
+      <button class="icon-btn" data-evdel="${ev.id}" aria-label="Padam atau tutup event" style="position:absolute;top:12px;right:12px;z-index:2;width:40px;height:40px;${ev.is_active ? 'background:rgba(0,0,0,.35);border-color:rgba(255,255,255,.18);' : ''}color:var(--red)">${icon('trash', 18)}</button>
+      <a href="#/a/tapak?e=${ev.id}" style="color:inherit;padding-right:44px"><div class="small muted" style="font-weight:600;letter-spacing:.06em">${ev.is_active ? 'DIBUKA KEPADA VENDOR' : 'DITUTUP'}</div>
+      <div style="font-family:var(--display);font-weight:700;font-size:20px">${esc(ev.name)}</div>
+      <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''}</div></a>
+      ${el.length ? `<div class="progress"${ev.is_active ? '' : ' style="background:var(--line-2)"'}>
+        <div class="p-locked" style="width:${(c('locked') / total) * 100}%${ev.is_active ? '' : ';background:var(--text)'}"></div>
+        <div class="p-paid" style="width:${((c('paid') + c('held') + c('signing')) / total) * 100}%"></div>
+      </div>
+      <div class="grid3 small">
+        <div class="stat"><b>${c('locked')}</b><span class="muted">Dikunci</span></div>
+        <div class="stat"><b style="color:var(--spark)">${c('paid') + c('held') + c('signing')}</b><span class="muted">Dalam proses</span></div>
+        <div class="stat"><b>${c('free')}</b><span class="muted">Kosong</span></div>
+      </div>` : `<a class="small" href="#/a/tapak?e=${ev.id}" style="color:inherit;text-decoration:underline">Belum ada tapak · jana tapak sekarang</a>`}
+    </div>`;
+  };
+
 
   render(`<div class="page">
     <header class="topbar"><img src="assets/logo.jpg" alt="Stailo Event" style="width:52px;height:52px;border-radius:14px;box-shadow:0 0 18px var(--mine-glow)"><div style="flex:1"><div class="eyebrow">ADMIN</div><h1 style="font-size:24px">Hai, ${esc(state.profile.owner_name || state.profile.business_name || 'Admin')}</h1></div></header>
     <div class="content">
-      ${ev ? `
-      <div class="card dark stack">
-        <button class="icon-btn" id="evdel" aria-label="Padam atau batalkan event" style="position:absolute;top:12px;right:12px;z-index:2;width:40px;height:40px;background:rgba(0,0,0,.35);border-color:rgba(255,255,255,.18);color:var(--red)">${icon('trash', 18)}</button>
-        <a href="#/a/tapak?e=${ev.id}" style="color:inherit;padding-right:44px"><div class="small muted" style="font-weight:600;letter-spacing:.06em">${ev.is_active ? 'EVENT AKTIF' : 'EVENT DITUTUP'}</div>
-        <div style="font-family:var(--display);font-weight:700;font-size:21px">${esc(ev.name)}</div>
-        <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''}</div></a>
-        <div class="progress">
-          <div class="p-locked" style="width:${(count('locked') / total) * 100}%"></div>
-          <div class="p-paid" style="width:${((count('paid') + count('held') + count('signing')) / total) * 100}%"></div>
-        </div>
-        <div class="grid3 small">
-          <div class="stat"><b>${count('locked')}</b><span class="muted">Dikunci</span></div>
-          <div class="stat"><b style="color:var(--spark)">${count('paid') + count('signing')}</b><span class="muted">Dalam proses</span></div>
-          <div class="stat"><b>${count('free')}</b><span class="muted">Kosong</span></div>
-        </div>
-      </div>` : `<div class="card stack"><b>Belum ada event</b><span class="small muted">Cipta event pertama dan jana tapak.</span><a class="btn" href="#/a/tapak">Cipta event</a></div>`}
+      <div class="section-title">Event${events.length ? ` (${events.length})` : ''} <button class="btn sm" id="newev">${icon('plus', 16)} Event baru</button></div>
+      ${events.length ? events.map(evCard).join('') : `<div class="card stack"><b>Belum ada event</b><span class="small muted">Cipta event pertama, kemudian jana tapak.</span></div>`}
 
       <div class="grid2">
         <a class="card stack" href="#/a/tapak" style="color:var(--text)"><span style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center">${icon('grid', 22)}</span><b>Urus tapak</b><span class="small muted">Gambar pelan, nombor &amp; kunci tapak</span></a>
@@ -80,12 +87,12 @@ export async function adminHomeView() {
       <div class="list">${toLock.map((l) => `
         <div class="list-item" style="cursor:default">
           <span class="code-tile amber">${esc(l.code)}</span>
-          <span class="grow"><span class="title">${esc(l.vendor?.business_name || '-')}</span><span class="small muted">${esc(l.vendor?.vendor_code || '')} · Resit deposit dihantar</span></span>
-          <a class="btn dark sm" href="#/a/tapak?e=${ev.id}&l=${l.id}">Semak</a>
+          <span class="grow"><span class="title">${esc(l.vendor?.business_name || '-')}</span><span class="small muted">${esc(l.vendor?.vendor_code || '')} · Resit deposit dihantar${events.length > 1 ? ' · ' + esc(evName(l.event_id)) : ''}</span></span>
+          <a class="btn dark sm" href="#/a/tapak?e=${l.event_id}&l=${l.id}">Semak</a>
         </div>`).join('')}${pendingAg.map((g) => `
         <a class="list-item" href="#/perjanjian/${g.id}">
           <span class="code-tile${isExpired(g) ? ' amber' : ''}" style="min-width:48px">${esc(g.lot_codes)}</span>
-          <span class="grow"><span class="title">${esc(g.vendor?.business_name || '-')}</span><span class="small ${isExpired(g) ? '' : 'muted'}" style="${isExpired(g) ? 'color:var(--red)' : ''}">${isExpired(g) ? 'Tamat masa tandatangan · beri masa tambahan atau buka semula' : 'Menunggu tandatangan perjanjian · tamat ' + esc(fmtDateTime(g.deadline))}</span></span>
+          <span class="grow"><span class="title">${esc(g.vendor?.business_name || '-')}</span><span class="small ${isExpired(g) ? '' : 'muted'}" style="${isExpired(g) ? 'color:var(--red)' : ''}">${isExpired(g) ? 'Tamat masa tandatangan · beri masa tambahan atau buka semula' : 'Menunggu tandatangan perjanjian · tamat ' + esc(fmtDateTime(g.deadline))}${events.length > 1 ? ' · ' + esc(evName(g.event_id)) : ''}</span></span>
           <span class="badge ${isExpired(g) ? 'red' : 'amber'}">${isExpired(g) ? 'Tamat' : 'Tandatangan'}</span>
         </a>`).join('')}${!toLock.length && !pendingAg.length ? '<div class="empty">Tiada tindakan diperlukan.</div>' : ''}</div>
 
@@ -100,8 +107,12 @@ export async function adminHomeView() {
   document.querySelectorAll('[data-nid]').forEach((a) => a.addEventListener('click', () => {
     sb.from('admin_notifications').update({ read_at: new Date().toISOString() }).eq('id', a.dataset.nid).then(() => window.dispatchEvent(new Event('notif-change')));
   }));
-  const evdel = document.getElementById('evdel');
-  if (evdel) evdel.onclick = () => eventDangerSheet(ev, lots.length, lots.filter((l) => l.status !== 'free').length);
+  document.getElementById('newev').onclick = () => eventSheet();
+  document.querySelectorAll('[data-evdel]').forEach((b) => (b.onclick = () => {
+    const ev = events.find((e) => e.id === b.dataset.evdel);
+    const el = lots.filter((l) => l.event_id === ev.id);
+    eventDangerSheet(ev, el.length, el.filter((l) => l.status !== 'free').length);
+  }));
 }
 
 // Lulus / tolak permohonan tapak tambahan
@@ -196,8 +207,8 @@ export async function adminLotsView(params, query) {
         <select class="input" id="evsel" aria-label="Pilih event" style="flex:1">${events.map((e) => `<option value="${e.id}"${e.id === ev.id ? ' selected' : ''}>${esc(e.name)}${e.is_active ? '' : ' (ditutup)'}</option>`).join('')}</select>
         <button class="icon-btn" id="editev" aria-label="Edit event">${icon('edit')}</button>
         <button class="icon-btn" id="delev2" aria-label="Padam event atau tapak" style="color:var(--red)">${icon('trash')}</button>
-        <button class="icon-btn" id="newev" aria-label="Event baru">${icon('plus')}</button>
       </div>
+      <button class="btn ghost block" id="newev">${icon('plus', 18)} Tambah event baru</button>
       <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''} · ${ev.is_active ? '<span class="badge green">Dibuka kepada vendor</span>' : '<span class="badge gray">Ditutup</span>'}</div>
 
       <div class="section-title">Gambar pelan tapak</div>

@@ -365,3 +365,12 @@ input[type=radio], input[type=checkbox] { accent-color: var(--gold); width: 20px
 .bottom-nav a { position: relative; }
 .notif-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line-2); }
 .notif-item:first-child { border-top: 0; }
+
+/* Pilihan event (vendor) */
+.ev-tabs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 2px 16px 4px; scroll-snap-type: x proximity; }
+.ev-tabs::-webkit-scrollbar { display: none; }
+.ev-tabs a { flex: none; max-width: 240px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line-2); color: var(--muted); }
+.ev-tabs a b { font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-tabs a span { font-size: 11px; }
+.ev-tabs a.on { background: var(--strong); border-color: var(--strong); color: var(--strong-ink); }
+.ev-tabs a.on b { color: var(--strong-ink); }

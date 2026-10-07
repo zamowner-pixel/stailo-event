@@ -60,7 +60,7 @@ export async function pickLotView(params, query) {
     render(`<div class="page">
       ${topbar(ev.name, { sub: `${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''}`, right: `<button class="icon-btn" id="refresh" aria-label="Muat semula">${icon('refresh')}</button>` })}
       <div class="content" style="padding-bottom:${canPick ? 120 : 20}px">
-        ${events.length > 1 ? `<select class="input" id="evsel" aria-label="Pilih event">${events.map((e) => `<option value="${e.id}"${e.id === ev.id ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>` : ''}
+        ${events.length > 1 ? `<div class="small muted" style="margin-bottom:-4px">${events.length} event dibuka · pilih event</div><div class="ev-tabs" role="tablist">${events.map((e) => `<a role="tab" href="#/v?e=${e.id}" class="${e.id === ev.id ? 'on' : ''}" aria-selected="${e.id === ev.id}"><b>${esc(e.name)}</b><span>${esc(fmtRange(e.start_date, e.end_date))}</span></a>`).join('')}</div>` : ''}
         ${cards}
         ${ev.layout_image_path
           ? `<div class="layout-img"><img src="${esc(publicUrl('layouts', ev.layout_image_path))}" alt="Pelan tapak ${esc(ev.name)}" id="layout"></div>`
@@ -87,8 +87,7 @@ export async function pickLotView(params, query) {
       document.querySelectorAll('[data-deadline]').forEach((el) => { el.textContent = leftText(new Date(el.dataset.deadline) - Date.now()); });
     }, 1000);
     document.getElementById('refresh').onclick = () => go(location.hash);
-    const evsel = document.getElementById('evsel');
-    if (evsel) evsel.onchange = () => go('#/v?e=' + evsel.value);
+    document.querySelector('.ev-tabs a.on')?.scrollIntoView({ block: 'nearest', inline: 'center' });
     document.getElementById('askmore').onclick = (e) => { e.preventDefault(); limitSheet(ev, limit, req); };
     document.querySelectorAll('.lot[data-lot]').forEach((b) => {
       b.onclick = () => {

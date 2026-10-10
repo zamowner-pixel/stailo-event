@@ -51,6 +51,7 @@ export async function adminHomeView() {
         <div class="stat"><b style="color:var(--spark)">${c('paid') + c('held') + c('signing')}</b><span class="muted">Dalam proses</span></div>
         <div class="stat"><b>${c('free')}</b><span class="muted">Kosong</span></div>
       </div>` : `<a class="small" href="#/a/tapak?e=${ev.id}" style="color:inherit;text-decoration:underline">Belum ada tapak · jana tapak sekarang</a>`}
+      <button class="btn ghost sm" data-evarc="${ev.id}" style="align-self:flex-start${ev.is_active ? ';background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.25);color:inherit' : ''}">${icon('upload', 16).replace('M12 16V4M7 9l5-5 5 5', 'M12 4v12M7 11l5 5 5-5')} Simpan data ke laptop${ev.archived_at ? ' · sudah diarkib' : ''}</button>
     </div>`;
   };
 
@@ -108,8 +109,8 @@ export async function adminHomeView() {
     sb.from('admin_notifications').update({ read_at: new Date().toISOString() }).eq('id', a.dataset.nid).then(() => window.dispatchEvent(new Event('notif-change')));
   }));
   document.getElementById('newev').onclick = () => eventSheet();
-  document.querySelectorAll('[data-evdel]').forEach((b) => (b.onclick = () => {
-    const ev = events.find((e) => e.id === b.dataset.evdel);
+  document.querySelectorAll('[data-evdel],[data-evarc]').forEach((b) => (b.onclick = () => {
+    const ev = events.find((e) => e.id === (b.dataset.evdel || b.dataset.evarc));
     const el = lots.filter((l) => l.event_id === ev.id);
     eventDangerSheet(ev, el.length, el.filter((l) => l.status !== 'free').length);
   }));
@@ -267,7 +268,10 @@ export async function adminLotsView(params, query) {
         <button class="icon-btn" id="editev" aria-label="Edit event">${icon('edit')}</button>
         <button class="icon-btn" id="delev2" aria-label="Padam event atau tapak" style="color:var(--red)">${icon('trash')}</button>
       </div>
-      <button class="btn ghost block" id="newev">${icon('plus', 18)} Tambah event baru</button>
+      <div class="grid2">
+        <button class="btn ghost" id="newev">${icon('plus', 18)} Event baru</button>
+        <button class="btn ghost" id="arcev">${icon('upload', 18).replace('M12 16V4M7 9l5-5 5 5', 'M12 4v12M7 11l5 5 5-5')} Simpan ke laptop</button>
+      </div>
       <div class="small muted">${esc(fmtRange(ev.start_date, ev.end_date))}${ev.location ? ' · ' + esc(ev.location) : ''} · ${ev.is_active ? '<span class="badge green">Dibuka kepada vendor</span>' : '<span class="badge gray">Ditutup</span>'}</div>
 
       <div class="section-title">Gambar pelan tapak</div>
@@ -299,6 +303,7 @@ export async function adminLotsView(params, query) {
   document.getElementById('newev').onclick = () => eventSheet();
   document.getElementById('editev').onclick = () => eventSheet(ev);
   document.getElementById('delev2').onclick = () => eventDangerSheet(ev, lots.length, lots.filter((l) => l.status !== 'free').length);
+  document.getElementById('arcev').onclick = () => eventDangerSheet(ev, lots.length, lots.filter((l) => l.status !== 'free').length);
   document.getElementById('addlot').onclick = () => lotEditSheet(ev, null, lots, reload);
   document.querySelectorAll('#gen').forEach((b) => (b.onclick = () => generateSheet(ev, lots, reload)));
   const sp = document.getElementById('setprice');

@@ -185,6 +185,9 @@ export async function accountView() {
         <label class="field">Nama perniagaan<input class="input" name="business_name" value="${esc(p.business_name)}" required></label>
         <label class="field">Nama pemilik<input class="input" name="owner_name" value="${esc(p.owner_name)}"></label>
         <label class="field">No. telefon (WhatsApp)<input class="input" type="tel" name="phone" value="${esc(p.phone)}"></label>
+        ${admin ? '' : `<div class="field">Jenis perniagaan
+          <div class="input" style="display:flex;align-items:center;gap:8px;background:var(--card-2);cursor:default" aria-readonly="true">${icon('lock', 16)}<b style="flex:1">${p.business_type ? esc(p.business_type) : '<span class="muted" style="font-weight:400">Belum ditetapkan</span>'}</b></div>
+          <span class="small muted" style="font-weight:400">Ditetapkan oleh penganjur. Hubungi penganjur jika perlu ditukar.</span></div>`}
         <button class="btn block" type="submit">Simpan</button>
       </form>
       ${admin ? `<form id="org" class="card stack">

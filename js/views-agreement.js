@@ -42,6 +42,7 @@ function vendorBlock(v, a) {
     No. Telefon: ${val(v.phone)}<br>
     Nombor Lot: ${val(a.lot_codes)}<br>
     Kategori Perniagaan: ${val(CATEGORY[v.category] || v.category)}<br>
+    ${v.business_type ? `Jenis Perniagaan (ditetapkan penganjur): ${val(v.business_type)}<br>` : ''}
     Produk atau Menu Diluluskan: ${val(v.products)}</p>`;
 }
 
@@ -273,7 +274,7 @@ export async function agreementView({ id }) {
   loading();
   const admin = state.profile.role === 'admin';
   const [a, s] = await Promise.all([
-    must(sb.from('agreements').select('*, vendor:profiles(vendor_code,business_name,owner_name,phone,id_no,address,rep_name,products,category)').eq('id', id).single()),
+    must(sb.from('agreements').select('*, vendor:profiles(vendor_code,business_name,owner_name,phone,id_no,address,rep_name,products,category,business_type)').eq('id', id).single()),
     loadSettings(true)
   ]);
   const p = a.vendor || {};
@@ -282,7 +283,7 @@ export async function agreementView({ id }) {
   const v = a.status === 'signed' ? { ...a.vendor_info } : {
     owner_name: p.owner_name, business_name: p.business_name, id_no: p.id_no, address: p.address,
     rep_name: p.rep_name || p.owner_name, rep_title: 'Pemilik', phone: p.phone, products: p.products,
-    vendor_code: p.vendor_code, category: p.category
+    vendor_code: p.vendor_code, category: p.category, business_type: p.business_type
   };
   const fileName = `Perjanjian ${a.lot_codes} ${v.business_name || ''}`;
   const back = admin ? '#/a/perjanjian' : '#/perjanjian';

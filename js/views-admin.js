@@ -145,17 +145,44 @@ function requestSheet(r) {
   };
 }
 
-// Padam / batal event, atau padam semua tapak
+// Arkib, tutup, padam event atau padam semua tapak
 function eventDangerSheet(ev, lotCount, takenCount) {
+  const archived = !!ev.archived_at;
   const s = openSheet(`<h2>${esc(ev.name)}</h2>
     <p class="small muted" style="margin:0">${lotCount} tapak${takenCount ? ` · <b style="color:var(--amber-ink)">${takenCount} sudah ditempah/dikunci vendor</b>` : ''}</p>
+    <div class="card stack" style="background:var(--card-2);gap:10px">
+      <b>${icon('file', 18)} Simpan ke laptop & kosongkan</b>
+      <span class="small muted">1. Muat turun arkib (ZIP: Excel, perjanjian, invois PDF, resit).<br>2. Buka & semak fail dalam laptop.<br>3. Bila semua lengkap, padam semua data event.</span>
+      ${archived ? `<span class="badge green" style="align-self:flex-start">Arkib dimuat turun ${esc(fmtDateTime(ev.archived_at))}</span>` : ''}
+      <button class="btn block" data-x="archive">${icon('upload', 18).replace('M12 16V4M7 9l5-5 5 5', 'M12 4v12M7 11l5 5 5-5')} ${archived ? 'Muat turun arkib semula' : 'Muat turun arkib (ZIP)'}</button>
+      <div class="small muted" data-prog style="display:none"></div>
+      <button class="btn danger block" data-x="purge"${archived ? '' : ' disabled'}>${icon('trash', 18)} Padam SEMUA data event</button>
+      ${archived ? '' : '<span class="small muted">Butang padam aktif selepas arkib dimuat turun.</span>'}
+    </div>
     <button class="btn ghost block" data-x="toggle">${ev.is_active ? 'Tutup event (sorok daripada vendor)' : 'Buka semula event kepada vendor'}</button>
-    <button class="btn danger block" data-x="lots"${lotCount ? '' : ' disabled'}>${icon('trash', 18)} Padam semua tapak sahaja</button>
-    <button class="btn danger block" data-x="event">${icon('trash', 18)} Padam event ini terus</button>
-    <p class="small muted" style="margin:0">Event dibatalkan? Pilih <b>Padam event ini terus</b>. Semua tapak dan tempahan akan dipadam. Invois yang dah dikeluarkan kekal dalam senarai Invois.</p>`);
+    <button class="btn ghost block" data-x="lots"${lotCount ? '' : ' disabled'}>${icon('trash', 18)} Padam semua tapak sahaja</button>
+    <button class="btn ghost block" data-x="event" style="color:var(--red)">${icon('trash', 18)} Padam event (simpan perjanjian & invois)</button>
+    <p class="small muted" style="margin:0">Event dibatalkan? Pilih <b>Padam event (simpan perjanjian & invois)</b>. Tapak dan tempahan dipadam, perjanjian bertandatangan dan invois kekal dalam apps.</p>`);
+  const prog = s.querySelector('[data-prog]');
   s.querySelectorAll('[data-x]').forEach((b) => (b.onclick = async () => {
     const x = b.dataset.x;
     try {
+      if (x === 'archive') {
+        await busy(b, async () => {
+          prog.style.display = '';
+          const { buildEventArchive } = await import('./archive.js');
+          const { downloadBlob } = await import('./invoice-pdf.js');
+          const out = await buildEventArchive(ev, (t) => { prog.textContent = t; });
+          downloadBlob(out.blob, out.name);
+          prog.textContent = `Siap: ${out.name}`;
+          const { error } = await sb.from('events').update({ archived_at: new Date().toISOString() }).eq('id', ev.id);
+          if (error) throw new Error(/archived_at/.test(error.message) ? 'Arkib dimuat turun, tetapi fail SQL 09 belum dijalankan di Supabase. Jalankan 09-arkib-event.sql dahulu untuk aktifkan butang padam.' : error.message);
+          toast(out.missing ? `Arkib dimuat turun (${out.missing} resit gagal — semak BACA SAYA.txt)` : 'Arkib dimuat turun. Semak fail dalam laptop.');
+          setTimeout(() => { closeSheet(); go(location.hash.split('&t=')[0] + (location.hash.includes('?') ? '&' : '?') + 't=' + Date.now()); }, 1200);
+        });
+        return;
+      }
+      if (x === 'purge') return purgeSheet(ev, lotCount);
       if (x === 'toggle') {
         await must(sb.from('events').update({ is_active: !ev.is_active }).eq('id', ev.id));
         closeSheet(); toast(ev.is_active ? 'Event ditutup' : 'Event dibuka semula'); return go('#/a?t=' + Date.now());
@@ -167,13 +194,45 @@ function eventDangerSheet(ev, lotCount, takenCount) {
         toast('Semua tapak dipadam'); return go('#/a/tapak?e=' + ev.id + '&t=' + Date.now());
       }
       if (x === 'event') {
-        if (!(await confirmSheet('Padam event terus?', `"${ev.name}" bersama semua tapak, tempahan dan gambar pelan akan dipadam. Tindakan ini tidak boleh dibatalkan.` + warn, 'Ya, padam event', true))) return;
+        if (!(await confirmSheet('Padam event?', `"${ev.name}" bersama semua tapak, tempahan dan gambar pelan akan dipadam. Perjanjian bertandatangan dan invois kekal dalam apps. Tindakan ini tidak boleh dibatalkan.` + warn, 'Ya, padam event', true))) return;
         if (ev.layout_image_path) await sb.storage.from('layouts').remove([ev.layout_image_path]);
         await must(sb.from('events').delete().eq('id', ev.id));
         toast('Event dipadam'); return go('#/a?t=' + Date.now());
       }
-    } catch (err) { fail(err); }
+    } catch (err) { prog.style.display = 'none'; fail(err); }
   }));
+}
+
+// Padam semua data event yang sudah diarkib (taip nama event untuk sahkan)
+function purgeSheet(ev, lotCount) {
+  const s = openSheet(`<h2 style="color:var(--red)">Padam SEMUA data event?</h2>
+    <p class="small" style="margin:0">Ini akan memadam <b>kekal</b> dari apps:</p>
+    <ul class="small" style="margin:0;padding-left:18px;line-height:1.7">
+      <li>${lotCount} tapak, semua tempahan & jadual bayaran</li>
+      <li>Semua <b>perjanjian bertandatangan</b> & invois event ini</li>
+      <li>Gambar resit & gambar pelan tapak</li>
+    </ul>
+    <p class="small muted" style="margin:0">Arkib dimuat turun ${esc(fmtDateTime(ev.archived_at))}. Pastikan fail ZIP sudah dibuka dan disemak dalam laptop sebelum teruskan. Vendor dan akaun mereka <b>tidak</b> dipadam.</p>
+    <form id="pf" class="stack">
+      <label class="field">Taip nama event untuk sahkan<input class="input" name="n" autocomplete="off" placeholder="${esc(ev.name)}" required></label>
+      <button class="btn danger block" type="submit" disabled>${icon('trash', 18)} Padam kekal</button>
+      <button class="btn ghost block" type="button" id="pc">Batal</button>
+    </form>`);
+  const f = s.querySelector('#pf'), btn = f.querySelector('button[type=submit]');
+  f.n.oninput = () => { btn.disabled = f.n.value.trim() !== ev.name.trim(); };
+  s.querySelector('#pc').onclick = closeSheet;
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    await busy(btn, async () => {
+      try {
+        const { purgeEvent } = await import('./archive.js');
+        const r = await purgeEvent(ev, f.n.value.trim());
+        closeSheet();
+        toast(`"${ev.name}" dipadam: ${r?.lots ?? 0} tapak, ${r?.agreements ?? 0} perjanjian, ${r?.invoices ?? 0} invois, ${(r?.receipts || []).length} resit`);
+        go('#/a?t=' + Date.now());
+      } catch (err) { fail(err); }
+    });
+  };
 }
 
 function invoiceRow(i) {
@@ -746,6 +805,14 @@ export async function settingsView() {
         <button class="btn block" type="submit">Simpan tetapan</button>
       </form>
 
+      <div class="card stack" id="types">
+        <b>Jenis perniagaan vendor</b>
+        <div class="small muted">Senarai pilihan untuk admin tetapkan jenis perniagaan setiap vendor (menu Vendor). Vendor tidak boleh mengubahnya.</div>
+        <div class="row" style="flex-wrap:wrap;gap:8px" id="typelist"></div>
+        <form class="row" id="typeadd" style="gap:8px"><input class="input" name="t" placeholder="Cth: Air, Lauk panas, Kuih-muih" maxlength="40" style="flex:1"><button class="btn sm" type="submit">${icon('plus', 16)} Tambah</button></form>
+        <button class="btn dark block" id="typesave">Simpan senarai</button>
+      </div>
+
       <div class="card stack">
         <b>Tandatangan penganjur</b>
         <div class="small muted">Dipaparkan pada setiap perjanjian vendor yang baru diluluskan.</div>
@@ -778,6 +845,28 @@ export async function settingsView() {
       catch (err) { fail(err); }
     });
   };
+  // Senarai jenis perniagaan
+  let types = [...(s.business_types || [])];
+  const drawTypes = () => {
+    document.getElementById('typelist').innerHTML = types.length
+      ? types.map((t, i) => `<span class="badge" style="background:var(--accent-soft);color:var(--accent);font-size:13px;padding:6px 6px 6px 12px;display:inline-flex;align-items:center;gap:6px">${esc(t)}<button type="button" data-rmt="${i}" aria-label="Buang ${esc(t)}" style="border:0;background:transparent;color:inherit;cursor:pointer;display:flex">${icon('x', 14)}</button></span>`).join('')
+      : '<span class="small muted">Belum ada jenis perniagaan.</span>';
+    document.querySelectorAll('[data-rmt]').forEach((b) => (b.onclick = () => { types.splice(+b.dataset.rmt, 1); drawTypes(); }));
+  };
+  drawTypes();
+  document.getElementById('typeadd').onsubmit = (e) => {
+    e.preventDefault();
+    const t = e.target.t.value.trim();
+    if (!t) return;
+    if (types.some((x) => x.toLowerCase() === t.toLowerCase())) return toast('Jenis ini sudah ada', 'error');
+    types.push(t); e.target.t.value = ''; drawTypes();
+  };
+  const tsave = document.getElementById('typesave');
+  tsave.onclick = () => busy(tsave, async () => {
+    try { state.settings = await must(sb.from('settings').update({ business_types: types }).eq('id', 1).select().single()); toast('Senarai jenis perniagaan disimpan'); }
+    catch (err) { fail(/business_types/.test(err.message || '') ? new Error('Jalankan fail 10-jenis-perniagaan.sql di Supabase dahulu.') : err); }
+  });
+
   const opad = signaturePad(document.getElementById('orgpad'));
   document.getElementById('orgclear').onclick = () => opad.clear();
   const osave = document.getElementById('orgsave');
@@ -851,9 +940,10 @@ function credsSheet(v, password, title) {
 
 export async function vendorsView(params, query) {
   loading();
-  const vendors = await must(sb.from('profiles').select('*').eq('role', 'vendor').order('vendor_code'));
+  const [vendors, st] = await Promise.all([must(sb.from('profiles').select('*').eq('role', 'vendor').order('vendor_code')), loadSettings(true)]);
+  const types = st.business_types || [];
   const term = (query.get('q') || '').toLowerCase();
-  const list = term ? vendors.filter((v) => [v.vendor_code, v.business_name, v.owner_name, v.phone].join(' ').toLowerCase().includes(term)) : vendors;
+  const list = term ? vendors.filter((v) => [v.vendor_code, v.business_name, v.owner_name, v.phone, v.business_type].join(' ').toLowerCase().includes(term)) : vendors;
   render(`<div class="page">
     ${topbar('Vendor', { sub: `${vendors.length} vendor`, right: `<button class="btn sm" id="add">${icon('plus', 16)} Vendor baru</button>` })}
     <div class="content">
@@ -861,7 +951,7 @@ export async function vendorsView(params, query) {
       <div class="list">${list.length ? list.map((v) => `
         <button class="list-item" data-v="${v.id}">
           <span style="min-width:52px;height:44px;padding:0 8px;border-radius:10px;background:${v.is_active ? 'var(--accent-soft)' : 'var(--line-2)'};color:${v.is_active ? 'var(--accent)' : 'var(--muted)'};font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none">${esc(v.vendor_code || '—')}</span>
-          <span class="grow"><span class="title">${esc(v.business_name || '-')}</span><span class="small muted">${esc(v.owner_name)}${v.phone ? ' · ' + esc(v.phone) : ''}</span></span>
+          <span class="grow"><span class="title">${esc(v.business_name || '-')}</span><span class="small muted">${v.business_type ? `<b style="color:var(--accent)">${esc(v.business_type)}</b> · ` : '<span style="color:var(--amber-ink)">Jenis belum ditetapkan</span> · '}${esc(v.owner_name)}${v.phone ? ' · ' + esc(v.phone) : ''}</span></span>
           ${v.is_active ? (docsComplete(v) ? '' : '<span class="badge red">Dokumen</span>') : '<span class="badge gray">Tidak aktif</span>'}
         </button>`).join('') : `<div class="empty">${term ? 'Tiada padanan.' : 'Belum ada vendor. Tekan "Vendor baru" untuk cipta ID vendor pertama.'}</div>`}</div>
       <div class="small muted">Hanya admin boleh cipta akaun vendor. Vendor log masuk dengan ID vendor &amp; kata laluan yang anda beri.</div>
@@ -869,11 +959,19 @@ export async function vendorsView(params, query) {
 
   const sf = document.getElementById('search');
   sf.onsubmit = (e) => { e.preventDefault(); go('#/a/vendor?q=' + encodeURIComponent(sf.q.value.trim())); };
-  document.getElementById('add').onclick = () => newVendorSheet(vendors);
-  document.querySelectorAll('[data-v]').forEach((b) => (b.onclick = () => vendorSheet(vendors.find((v) => v.id === b.dataset.v))));
+  document.getElementById('add').onclick = () => newVendorSheet(vendors, types);
+  document.querySelectorAll('[data-v]').forEach((b) => (b.onclick = () => vendorSheet(vendors.find((v) => v.id === b.dataset.v), types)));
 }
 
-function newVendorSheet(vendors) {
+// Pilihan jenis perniagaan (senarai ditetapkan admin dalam Tetapan)
+function typeSelect(types, current = '') {
+  const list = current && !types.includes(current) ? [...types, current] : types;
+  return `<label class="field">Jenis perniagaan <span class="small muted">(hanya admin boleh tetapkan)</span>
+    <select class="input" name="business_type"><option value="">— Belum ditetapkan —</option>${list.map((t) => `<option${t === current ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
+    ${types.length ? '' : '<div class="small" style="color:var(--amber-ink)">Senarai jenis perniagaan kosong. Tambah di menu Tetapan.</div>'}`;
+}
+
+function newVendorSheet(vendors, types = []) {
   const s = openSheet(`<h2>Vendor baru</h2>
     <form id="nf" class="stack">
       <label class="field">ID vendor<input class="input" name="code" required value="${nextCode(vendors)}" pattern="[A-Za-z0-9\\-]{2,20}" style="text-transform:uppercase;font-weight:700"></label>
@@ -882,6 +980,7 @@ function newVendorSheet(vendors) {
       <label class="field">No. telefon (WhatsApp)<input class="input" type="tel" name="phone" placeholder="0123456789"></label>
       <label class="field">Kategori
         <select class="input" name="category"><option value="makanan">Makanan &amp; minuman</option><option value="bukan_makanan">Bukan makanan</option></select></label>
+      ${typeSelect(types)}
       <label class="field">Kata laluan sementara<input class="input" name="password" required minlength="6" value="${randomPassword()}"></label>
       <button class="btn block" type="submit">Cipta akaun vendor</button>
     </form>`);
@@ -895,14 +994,14 @@ function newVendorSheet(vendors) {
           p_code: d.code.trim().toUpperCase(), p_password: d.password, p_business_name: d.business_name.trim(),
           p_owner_name: d.owner_name.trim(), p_phone: d.phone.trim()
         }));
-        if (newId) await must(sb.from('profiles').update({ category: d.category }).eq('id', newId));
+        if (newId) await must(sb.from('profiles').update({ category: d.category, business_type: d.business_type || '' }).eq('id', newId));
         credsSheet({ vendor_code: d.code.trim().toUpperCase(), business_name: d.business_name.trim(), owner_name: d.owner_name.trim(), phone: d.phone.trim() }, d.password, 'Akaun vendor dicipta');
       } catch (err) { fail(err); }
     });
   };
 }
 
-function vendorSheet(v) {
+function vendorSheet(v, types = []) {
   const s = openSheet(`<div class="row between"><div><h2>${esc(v.business_name || '-')}</h2><div class="small muted">ID vendor: <b>${esc(v.vendor_code || '-')}</b></div></div>${v.is_active ? '<span class="badge green">Aktif</span>' : '<span class="badge gray">Tidak aktif</span>'}</div>
     <form id="ef" class="stack">
       <label class="field">Nama perniagaan<input class="input" name="business_name" required value="${esc(v.business_name)}"></label>
@@ -910,6 +1009,7 @@ function vendorSheet(v) {
       <label class="field">No. telefon (WhatsApp)<input class="input" type="tel" name="phone" value="${esc(v.phone)}"></label>
       <label class="field">Kategori
         <select class="input" name="category"><option value="makanan"${v.category === 'makanan' ? ' selected' : ''}>Makanan &amp; minuman</option><option value="bukan_makanan"${v.category !== 'makanan' ? ' selected' : ''}>Bukan makanan</option></select></label>
+      ${typeSelect(types, v.business_type || '')}
       <button class="btn dark block" type="submit">Simpan</button>
     </form>
     <div class="card stack" style="background:var(--card-2)">

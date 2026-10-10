@@ -153,12 +153,11 @@ function eventDangerSheet(ev, lotCount, takenCount) {
     <p class="small muted" style="margin:0">${lotCount} tapak${takenCount ? ` · <b style="color:var(--amber-ink)">${takenCount} sudah ditempah/dikunci vendor</b>` : ''}</p>
     <div class="card stack" style="background:var(--card-2);gap:10px">
       <b>${icon('file', 18)} Simpan ke laptop & kosongkan</b>
-      <span class="small muted">1. Muat turun arkib (ZIP: Excel, perjanjian, invois PDF, resit).<br>2. Buka & semak fail dalam laptop.<br>3. Bila semua lengkap, padam semua data event.</span>
+      <span class="small muted">Tekan butang di bawah. Fail ZIP (Excel, perjanjian, invois PDF, resit) masuk ke laptop, kemudian apps terus minta pengesahan untuk padam semua data event ini dari Supabase.</span>
       ${archived ? `<span class="badge green" style="align-self:flex-start">Arkib dimuat turun ${esc(fmtDateTime(ev.archived_at))}</span>` : ''}
-      <button class="btn block" data-x="archive">${icon('upload', 18).replace('M12 16V4M7 9l5-5 5 5', 'M12 4v12M7 11l5 5 5-5')} ${archived ? 'Muat turun arkib semula' : 'Muat turun arkib (ZIP)'}</button>
+      <button class="btn block" data-x="archive">${icon('upload', 18).replace('M12 16V4M7 9l5-5 5 5', 'M12 4v12M7 11l5 5 5-5')} ${archived ? 'Muat turun semula & kosongkan' : 'Muat turun ke laptop & kosongkan'}</button>
       <div class="small muted" data-prog style="display:none"></div>
-      <button class="btn danger block" data-x="purge"${archived ? '' : ' disabled'}>${icon('trash', 18)} Padam SEMUA data event</button>
-      ${archived ? '' : '<span class="small muted">Butang padam aktif selepas arkib dimuat turun.</span>'}
+      ${archived ? `<button class="btn danger block" data-x="purge">${icon('trash', 18)} Padam SEMUA data event (arkib sudah ada)</button>` : ''}
     </div>
     <button class="btn ghost block" data-x="toggle">${ev.is_active ? 'Tutup event (sorok daripada vendor)' : 'Buka semula event kepada vendor'}</button>
     <button class="btn ghost block" data-x="lots"${lotCount ? '' : ' disabled'}>${icon('trash', 18)} Padam semua tapak sahaja</button>
@@ -178,8 +177,10 @@ function eventDangerSheet(ev, lotCount, takenCount) {
           prog.textContent = `Siap: ${out.name}`;
           const { error } = await sb.from('events').update({ archived_at: new Date().toISOString() }).eq('id', ev.id);
           if (error) throw new Error(/archived_at/.test(error.message) ? 'Arkib dimuat turun, tetapi fail SQL 09 belum dijalankan di Supabase. Jalankan 09-arkib-event.sql dahulu untuk aktifkan butang padam.' : error.message);
-          toast(out.missing ? `Arkib dimuat turun (${out.missing} resit gagal — semak BACA SAYA.txt)` : 'Arkib dimuat turun. Semak fail dalam laptop.');
-          setTimeout(() => { closeSheet(); go(location.hash.split('&t=')[0] + (location.hash.includes('?') ? '&' : '?') + 't=' + Date.now()); }, 1200);
+          toast(out.missing ? `Arkib dimuat turun (${out.missing} resit gagal — semak BACA SAYA.txt)` : 'Arkib dimuat turun ke folder Downloads.');
+          ev.archived_at = new Date().toISOString();
+          // Terus ke langkah padam supaya Supabase kosong
+          setTimeout(() => purgeSheet(ev, lotCount, out), 900);
         });
         return;
       }
@@ -205,23 +206,28 @@ function eventDangerSheet(ev, lotCount, takenCount) {
 }
 
 // Padam semua data event yang sudah diarkib (taip nama event untuk sahkan)
-function purgeSheet(ev, lotCount) {
-  const s = openSheet(`<h2 style="color:var(--red)">Padam SEMUA data event?</h2>
+function purgeSheet(ev, lotCount, out = null) {
+  const s = openSheet(`${out ? `<div class="card row" style="background:var(--green-soft);color:var(--green);gap:10px">${icon('check', 22)}<div class="small"><b>Arkib dimuat turun</b><br>${esc(out.name)} · ${out.counts.agreements} perjanjian, ${out.counts.invoices} invois, ${out.counts.receipts - out.missing} resit${out.missing ? ` <b style="color:var(--red)">(${out.missing} resit gagal)</b>` : ''}</div></div>` : ''}
+    <h2 style="color:var(--red)">Kosongkan event ini dari apps?</h2>
     <p class="small" style="margin:0">Ini akan memadam <b>kekal</b> dari apps:</p>
     <ul class="small" style="margin:0;padding-left:18px;line-height:1.7">
       <li>${lotCount} tapak, semua tempahan & jadual bayaran</li>
       <li>Semua <b>perjanjian bertandatangan</b> & invois event ini</li>
       <li>Gambar resit & gambar pelan tapak</li>
     </ul>
-    <p class="small muted" style="margin:0">Arkib dimuat turun ${esc(fmtDateTime(ev.archived_at))}. Pastikan fail ZIP sudah dibuka dan disemak dalam laptop sebelum teruskan. Vendor dan akaun mereka <b>tidak</b> dipadam.</p>
+    <p class="small muted" style="margin:0">Pastikan fail ZIP ada dalam folder <b>Downloads</b> laptop sebelum teruskan. Vendor dan akaun mereka <b>tidak</b> dipadam.</p>
     <form id="pf" class="stack">
       <label class="field">Taip nama event untuk sahkan<input class="input" name="n" autocomplete="off" placeholder="${esc(ev.name)}" required></label>
-      <button class="btn danger block" type="submit" disabled>${icon('trash', 18)} Padam kekal</button>
-      <button class="btn ghost block" type="button" id="pc">Batal</button>
+      <button class="btn danger block" type="submit" disabled>${icon('trash', 18)} Padam semua & kosongkan</button>
+      <button class="btn ghost block" type="button" id="pc">Belum, padam kemudian</button>
     </form>`);
   const f = s.querySelector('#pf'), btn = f.querySelector('button[type=submit]');
   f.n.oninput = () => { btn.disabled = f.n.value.trim() !== ev.name.trim(); };
-  s.querySelector('#pc').onclick = closeSheet;
+  s.querySelector('#pc').onclick = () => {
+    closeSheet();
+    const h = location.hash.replace(/([?&])t=\d+&?/, '$1').replace(/[?&]$/, '');
+    go(h + (h.includes('?') ? '&' : '?') + 't=' + Date.now());
+  };
   f.onsubmit = async (e) => {
     e.preventDefault();
     await busy(btn, async () => {

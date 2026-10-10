@@ -374,3 +374,54 @@ input[type=radio], input[type=checkbox] { accent-color: var(--gold); width: 20px
 .ev-tabs a span { font-size: 11px; }
 .ev-tabs a.on { background: var(--strong); border-color: var(--strong); color: var(--strong-ink); }
 .ev-tabs a.on b { color: var(--strong-ink); }
+
+/* Telefon: bar tindakan menggantikan menu bawah */
+.action-bar ~ .bottom-nav { display: none; }
+
+/* =============================================================
+   TABLET & LAPTOP (skrin lebar) — menu di tepi, kandungan lebih luas
+   ============================================================= */
+@media (min-width: 768px) {
+  body.in-app { --side: 92px; }
+  body.in-app #app { max-width: none; margin: 0 0 0 var(--side); }
+  body.in-app .page { width: 100%; max-width: 1040px; margin: 0 auto; padding-bottom: 40px; }
+  body.in-app .topbar { padding: 26px 32px 8px; }
+  body.in-app .topbar h1 { font-size: 26px; }
+  body.in-app .content { padding: 10px 32px 32px; gap: 18px; }
+
+  /* Menu bawah jadi menu tepi */
+  body.in-app .bottom-nav { left: 0; top: 0; bottom: 0; transform: none; width: var(--side); max-width: none; height: auto;
+    grid-auto-flow: row; grid-auto-rows: 68px; grid-auto-columns: auto; align-content: start; gap: 4px;
+    padding: 20px 8px; border-top: 0; border-right: 1px solid var(--line-2); }
+  body.in-app .bottom-nav::before { content: ''; display: block; height: 64px; margin-bottom: 12px;
+    background: url(../assets/logo.jpg) center / 52px 52px no-repeat; border-radius: 14px; }
+  body.in-app .bottom-nav a { border-radius: 14px; justify-content: center; text-align: center; position: relative; }
+  body.in-app .bottom-nav a:hover { background: var(--card); }
+  body.in-app .bottom-nav a.active { background: var(--accent-soft); }
+
+  body.in-app .action-bar ~ .bottom-nav { display: grid; }
+  body.in-app .action-bar { left: var(--side); right: 0; width: auto; max-width: none; transform: none;
+    padding-left: max(32px, calc((100vw - var(--side) - 1040px) / 2 + 32px)); padding-right: max(32px, calc((100vw - var(--side) - 1040px) / 2 + 32px)); }
+
+  /* Helaian bawah jadi tetingkap di tengah */
+  .sheet-backdrop { align-items: center; padding: 24px; }
+  body.in-app .sheet-backdrop { padding-left: calc(var(--side) + 24px); }
+  .sheet { max-width: 580px; border-radius: 22px; border: 1px solid var(--line); max-height: 86vh; padding: 24px 26px; box-shadow: 0 24px 60px rgba(0,0,0,.35); }
+  body.in-app .toast { left: calc(50% + var(--side) / 2); bottom: 32px; }
+
+  /* Susunan grid */
+  .ev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+  .layout-img img { max-height: 460px; }
+  .lot { min-height: 54px; font-size: 14px; }
+  .lotmap { gap: 10px; }
+}
+
+/* Laptop / tablet melintang: menu tepi dengan label penuh */
+@media (min-width: 1100px) {
+  body.in-app { --side: 232px; }
+  body.in-app .bottom-nav { grid-auto-rows: 52px; padding: 24px 14px; }
+  body.in-app .bottom-nav::before { background-position: 10px center; height: 60px; }
+  body.in-app .bottom-nav a { flex-direction: row; justify-content: flex-start; gap: 14px; padding: 0 16px; font-size: 15px; text-align: left; }
+  body.in-app .content { gap: 20px; }
+  .layout-img img { max-height: 540px; }
+}

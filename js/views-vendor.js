@@ -78,7 +78,7 @@ export async function pickLotView(params, query) {
         ${sel.length
           ? `<div style="flex:1;min-width:0"><div class="small muted">${sel.length} tapak dipilih</div><div style="font-family:var(--display);font-size:18px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sel.map((l) => esc(l.code)).join(', ')} · ${rm(total)}</div></div><button class="btn" id="go">Teruskan bayar</button>`
           : `<div class="muted" style="flex:1;min-height:50px;display:flex;align-items:center">Klik tapak kosong untuk pilih (baki ${remaining} tapak).</div>`}
-      </div>` : nav('#/v')}
+      </div>${nav('#/v')}` : nav('#/v')}
     </div>`);
     const img = document.getElementById('layout');
     if (img) img.onclick = () => lightbox(img.src);

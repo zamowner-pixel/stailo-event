@@ -60,7 +60,7 @@ export async function adminHomeView() {
     <header class="topbar"><img src="assets/logo.jpg" alt="Stailo Event" style="width:52px;height:52px;border-radius:14px;box-shadow:0 0 18px var(--mine-glow)"><div style="flex:1"><div class="eyebrow">ADMIN</div><h1 style="font-size:24px">Hai, ${esc(state.profile.owner_name || state.profile.business_name || 'Admin')}</h1></div></header>
     <div class="content">
       <div class="section-title">Event${events.length ? ` (${events.length})` : ''} <button class="btn sm" id="newev">${icon('plus', 16)} Event baru</button></div>
-      ${events.length ? events.map(evCard).join('') : `<div class="card stack"><b>Belum ada event</b><span class="small muted">Cipta event pertama, kemudian jana tapak.</span></div>`}
+      ${events.length ? `<div class="ev-grid stack" style="gap:16px">${events.map(evCard).join('')}</div>` : `<div class="card stack"><b>Belum ada event</b><span class="small muted">Cipta event pertama, kemudian jana tapak.</span></div>`}
 
       <div class="grid2">
         <a class="card stack" href="#/a/tapak" style="color:var(--text)"><span style="width:44px;height:44px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center">${icon('grid', 22)}</span><b>Urus tapak</b><span class="small muted">Gambar pelan, nombor &amp; kunci tapak</span></a>

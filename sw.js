@@ -1,6 +1,6 @@
 // Service worker ringkas: simpan fail apps supaya cepat dibuka.
 // Tukar VERSION setiap kali anda kemas kini kod, supaya phone vendor dapat versi baru.
-const VERSION = 'stailo-v26';
+const VERSION = 'stailo-v27';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './js/app.js', './js/lib.js', './js/config.js',
@@ -9,7 +9,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (e) => {
   // Video dimainkan terus dari rangkaian (tidak dicache)
   if (e.request.destination === 'video' || url.pathname.endsWith('.mp4') || e.request.headers.has('range')) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' }) // sentiasa semak versi terbaru di pelayan
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));

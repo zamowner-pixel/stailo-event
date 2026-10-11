@@ -71,11 +71,12 @@ async function router() {
     if (who === 'draw' && !state.session) return go('#/cabutan/masuk');
     if (who !== 'guest' && !state.session) return go('#/masuk');
     // Petugas cabutan hanya boleh buka skrin cabutan
-    if (state.profile.role === 'draw' && who !== 'draw') return go('#/cabutan');
-    if (who === 'draw' && !['draw', 'admin'].includes(state.profile.role)) return go(homeFor());
-    if (who === 'admin' && state.profile.role !== 'admin') return go('#/v');
-    if (who === 'vendor' && state.profile.role === 'admin') return go('#/a');
-    if (who !== 'guest' && state.profile.role === 'vendor' && !state.profile.is_active) {
+    const role = state.profile?.role;
+    if (state.session && role === 'draw' && who !== 'draw' && who !== 'guest') return go('#/cabutan');
+    if (who === 'draw' && !['draw', 'admin'].includes(role)) return go(homeFor());
+    if (who === 'admin' && role !== 'admin') return go('#/v');
+    if (who === 'vendor' && role !== 'vendor') return go(homeFor());
+    if (who !== 'guest' && role === 'vendor' && !state.profile.is_active) {
       render(`<div class="page"><div class="content" style="padding-top:60px"><div class="card stack">
         <b>Akaun tidak aktif</b><span class="small muted">Akaun ${esc(state.profile.vendor_code || '')} telah dinyahaktifkan. Sila hubungi admin.</span>
         <button class="btn ghost" id="lo">Log keluar</button></div></div></div>`);

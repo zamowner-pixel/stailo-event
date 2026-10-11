@@ -425,3 +425,93 @@ input[type=radio], input[type=checkbox] { accent-color: var(--gold); width: 20px
   body.in-app .content { gap: 20px; }
   .layout-img img { max-height: 540px; }
 }
+
+/* =============================================================
+   CABUTAN BERTUAH
+   ============================================================= */
+.qr-box { background: #fff; border-radius: 14px; padding: 10px; align-self: center; line-height: 0; }
+.qr-box svg { display: block; width: 200px; max-width: 100%; height: auto; }
+.lucky-admin-grid { display: grid; gap: 16px; }
+@media (min-width: 900px) { .lucky-admin-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
+
+/* Page pembeli & log masuk petugas (tema emas-hitam tetap) */
+.lucky-page { min-height: 100vh; min-height: 100dvh; display: flex; align-items: flex-start; justify-content: center; padding: 28px 16px 40px;
+  background: radial-gradient(120% 60% at 50% -10%, #4a3510 0%, #120d05 55%, #000 100%); color: #f4ecd8; }
+.lucky-card { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 12px; }
+.lucky-logo { width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 0 30px rgba(245,197,66,.35); }
+.lucky-eyebrow { font-family: var(--display); font-weight: 800; letter-spacing: .24em; font-size: 12px; color: #F5C542; margin-top: 8px; }
+.lucky-card h1 { font-size: 30px; line-height: 1.1; color: #fff; text-wrap: balance; }
+.lucky-card h2 { font-size: 22px; color: #fff; }
+.lucky-sub { margin: 0; color: #cbbd9c; font-size: 14px; }
+.lucky-from { background: rgba(245,197,66,.12); border: 1px solid rgba(245,197,66,.35); border-radius: 12px; padding: 10px 14px; font-size: 14px; }
+.lucky-from b { color: #F5C542; }
+.lucky-prizes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lucky-prizes b { width: 100%; font-size: 12px; letter-spacing: .1em; color: #a99c7f; text-transform: uppercase; }
+.lucky-prizes span { background: #1f1a12; border: 1px solid #3d3322; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; }
+.lucky-prizes i { font-style: normal; color: #F5C542; }
+.lucky-form { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; background: #17130d; border: 1px solid #3d3322; border-radius: 18px; padding: 18px; }
+.lucky-form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: #e9dcc0; }
+.lucky-form input:not([type=checkbox]) { height: 50px; border-radius: 12px; border: 1px solid #4a3d27; background: #0d0a06; color: #fff; padding: 0 14px; font-size: 16px; }
+.lucky-form input:focus { outline: 2px solid #F5C542; outline-offset: 1px; }
+.lucky-form .lucky-consent { flex-direction: row; align-items: flex-start; gap: 10px; font-weight: 500; font-size: 12px; line-height: 1.5; color: #b9ab90; }
+.lucky-consent input { margin-top: 2px; width: 18px; height: 18px; accent-color: #F5C542; flex: none; }
+.lucky-form .btn { background: linear-gradient(135deg, #F5C542, #D99A1E); color: #1a1205; border: 0; }
+.lucky-ok { text-align: center; background: #17130d; border: 1px solid #3d3322; border-radius: 18px; padding: 24px 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; color: #e9dcc0; }
+.lucky-ok svg { color: #1a1205; background: #F5C542; border-radius: 50%; padding: 8px; width: 52px; height: 52px; }
+.lucky-ok p { margin: 0; font-size: 14px; line-height: 1.55; }
+.lucky-closed { background: #2a1416; border: 1px solid #5a2a2e; color: #f3c9cd; border-radius: 14px; padding: 14px; font-size: 14px; }
+
+/* Skrin cabutan (untuk projektor / TV) */
+body.draw-mode #app { max-width: none; margin: 0; }
+.draw-stage { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; color: #f4ecd8;
+  background: radial-gradient(90% 70% at 50% 0%, #4a3510 0%, #140f07 55%, #000 100%); padding: 16px clamp(16px, 3vw, 40px) 24px; gap: 18px; }
+.draw-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.draw-logo { width: 54px; height: 54px; border-radius: 14px; }
+.draw-title { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.draw-eyebrow { font-family: var(--display); font-weight: 800; letter-spacing: .26em; font-size: 12px; color: #F5C542; }
+.draw-select { background: transparent; border: 0; color: #fff; font: 700 clamp(18px, 2.4vw, 26px) var(--display); padding: 0; max-width: 100%; }
+.draw-select option { color: #000; }
+.draw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.draw-ghost { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(245,197,66,.35); background: rgba(0,0,0,.3); color: #f4ecd8; font: 600 14px var(--body); cursor: pointer; }
+.draw-main { flex: 1; display: grid; gap: 20px; grid-template-columns: 1fr; }
+@media (min-width: 1000px) { .draw-main { grid-template-columns: 1fr 320px; } }
+.draw-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 10px 0; }
+.draw-stats { display: flex; gap: 10px 22px; flex-wrap: wrap; justify-content: center; color: #cbbd9c; font-size: 15px; }
+.draw-stats b { color: #fff; font-size: 20px; }
+.draw-live { color: #7ee2a8; }
+.draw-prize-now { font-size: clamp(18px, 2.4vw, 28px); color: #e9dcc0; }
+.draw-prize-now b { color: #F5C542; }
+.draw-prize-now span { color: #a99c7f; font-size: .7em; }
+.draw-slot { width: min(100%, 900px); min-height: clamp(130px, 22vh, 220px); display: flex; align-items: center; justify-content: center; border-radius: 28px;
+  background: linear-gradient(180deg, #0b0905, #1d170e); border: 2px solid rgba(245,197,66,.5); box-shadow: inset 0 0 50px rgba(0,0,0,.8), 0 0 60px rgba(245,197,66,.15); padding: 16px 24px; overflow: hidden; }
+.draw-slot span { font: 800 clamp(30px, 6vw, 84px)/1.1 var(--display); color: #fff; word-break: break-word; }
+.draw-slot.spinning span { color: #F5C542; filter: blur(.4px); }
+.draw-slot .final { color: #F5C542; text-shadow: 0 0 40px rgba(245,197,66,.6); }
+.draw-go { height: 70px; padding: 0 48px; border-radius: 999px; border: 0; cursor: pointer; font: 800 clamp(18px, 2.2vw, 24px) var(--display); letter-spacing: .08em; color: #1a1205;
+  background: linear-gradient(135deg, #FFE08A, #F5C542 40%, #D99A1E); box-shadow: 0 12px 40px rgba(245,197,66,.35); }
+.draw-go.small { height: 52px; padding: 0 30px; font-size: 18px; }
+.draw-go:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.draw-go:focus-visible, .draw-ghost:focus-visible, .draw-prizes button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.draw-prizes { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 900px; }
+.draw-prizes button { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 12px; border: 1px solid #4a3d27; background: #17130d; color: #e9dcc0; font: 600 15px var(--body); cursor: pointer; }
+.draw-prizes button i { font-style: normal; font-size: 12px; color: #a99c7f; }
+.draw-prizes button.on { background: #F5C542; color: #1a1205; border-color: #F5C542; }
+.draw-prizes button.on i { color: #5a420f; }
+.draw-prizes button:disabled { opacity: .35; text-decoration: line-through; cursor: default; }
+.draw-side { background: rgba(0,0,0,.35); border: 1px solid #3d3322; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 120px); overflow: auto; }
+.draw-side-h { font: 700 16px var(--display); color: #F5C542; }
+.draw-list { display: flex; flex-direction: column; gap: 8px; }
+.draw-w { background: #17130d; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.draw-w b { color: #fff; } .draw-w span { font-size: 12px; color: #a99c7f; } .draw-w em { font-size: 11px; color: #e08a8a; font-style: normal; }
+.draw-w.off b { text-decoration: line-through; opacity: .6; }
+.draw-none, .draw-empty { color: #a99c7f; font-size: 14px; }
+.draw-pop { position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.78); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.draw-confetti { position: absolute; inset: 0; pointer-events: none; }
+.draw-pop-card { position: relative; width: min(100%, 760px); text-align: center; border-radius: 28px; padding: clamp(24px, 5vw, 48px); display: flex; flex-direction: column; gap: 12px; align-items: center;
+  background: linear-gradient(160deg, #2b2110, #0b0905); border: 2px solid #F5C542; box-shadow: 0 0 80px rgba(245,197,66,.35); animation: popIn .45s cubic-bezier(.2,1.4,.4,1); }
+@keyframes popIn { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .draw-pop-card { animation: none; } }
+.draw-pop-prize { font: 700 clamp(18px, 2.6vw, 28px) var(--display); color: #e9dcc0; }
+.draw-pop-name { font: 800 clamp(36px, 7vw, 92px)/1.05 var(--display); color: #F5C542; word-break: break-word; text-shadow: 0 0 40px rgba(245,197,66,.5); }
+.draw-pop-meta { font-size: clamp(16px, 2vw, 22px); color: #cbbd9c; }
+.draw-pop-btns { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 10px; }

@@ -91,10 +91,19 @@ async function router() {
     if (my !== routing) return;
     render(`<div class="page"><div class="content" style="padding-top:60px">
       <div class="card stack"><b>Ada masalah</b><span class="small muted">${esc(errMsg(err))}</span>
-      <button class="btn" onclick="location.reload()">Cuba lagi</button>
+      <button class="btn" id="retry">Cuba lagi</button>
       ${state.session ? '<button class="btn ghost" id="lo">Log keluar</button>' : ''}</div></div></div>`);
     const lo = document.getElementById('lo');
     if (lo) lo.onclick = async () => { await sb.auth.signOut(); go('#/'); };
+    // Cuba lagi: buang salinan lama apps dalam telefon, kemudian muat semula versi terbaru
+    document.getElementById('retry').onclick = async () => {
+      try {
+        const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+        await Promise.all(regs.map((r) => r.unregister()));
+        if (window.caches) await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+      } catch {}
+      location.reload();
+    };
   }
 }
 

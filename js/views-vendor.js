@@ -3,6 +3,7 @@ import {
   topbar, nav, lotMap, PLANS, planPct, planAmounts, scheduleHtml, publicUrl, lightbox, loadSettings, fileExt, confirmSheet, badge, STATUS_BOOKING, openSheet, closeSheet
 } from './lib.js';
 import { isExpired, leftText } from './views-agreement.js';
+import { vendorLuckyHtml } from './views-lucky.js';
 
 let countdownTimer;
 export function clearTimers() { clearInterval(countdownTimer); }
@@ -263,6 +264,8 @@ export async function myBookingsView() {
     must(sb.from('agreements').select('id,status,lot_ids').eq('vendor_id', state.profile.id).in('status', ['pending', 'signed'])),
     must(sb.from('payment_schedules').select('*').eq('vendor_id', state.profile.id).neq('status', 'cancelled').order('seq'))
   ]);
+  let lucky = { html: '', bind: () => {} };
+  try { lucky = await vendorLuckyHtml(); } catch (err) { console.warn(err); }
   const groups = [...new Set(scheds.map((r) => r.group_id))];
   const schedCards = groups.map((g) => {
     const rows = scheds.filter((r) => r.group_id === g);
@@ -286,6 +289,7 @@ export async function myBookingsView() {
   render(`<div class="page">${topbar('Tempahan saya')}
     <div class="content">
       ${schedCards ? `<div class="section-title">Jadual bayaran</div>${schedCards}` : ''}
+      ${lucky.html}
       <div class="section-title">Tempahan tapak</div>
       <div class="list">${bookings.length ? bookings.map((b) => `
         <a class="list-item" href="${bHref(b)}">
@@ -300,4 +304,5 @@ export async function myBookingsView() {
           <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><b>${rm(i.total)}</b><span class="badge ${i.status === 'paid' ? 'green' : 'red'}">${i.status === 'paid' ? 'Dibayar' : 'Belum bayar'}</span></span>
         </a>`).join('') : '<div class="empty">Belum ada invois.</div>'}</div>
     </div>${nav('#/v/tempahan')}</div>`);
+  lucky.bind();
 }

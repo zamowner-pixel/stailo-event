@@ -46,7 +46,9 @@ function jpegSize(bytes) {
 }
 
 export class Pdf {
-  constructor() { this.W = 595.28; this.H = 841.89; this.ops = []; this.images = []; }
+  constructor() { this.W = 595.28; this.H = 841.89; this.pages = []; this.images = []; this.addPage(); }
+  // Halaman baru (semua lukisan selepas ini masuk ke halaman tersebut)
+  addPage() { this.ops = []; this.pages.push(this.ops); }
   // y diukur dari atas halaman
   text(s, x, y, { size = 10, bold = false, color = '#111111', align = 'left' } = {}) {
     let tx = x;
@@ -72,14 +74,17 @@ export class Pdf {
     const push = (b) => { chunks.push(b); pos += b.length; };
     push(enc('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n'));
     const objs = [];
-    const content = this.ops.join('\n');
-    const imgRefs = this.images.map((im, i) => `/${im.name} ${7 + i} 0 R`).join(' ');
+    const n = this.pages.length, imgBase = 5 + 2 * n;
+    const imgRefs = this.images.map((im, i) => `/${im.name} ${imgBase + i} 0 R`).join(' ');
     objs.push('<< /Type /Catalog /Pages 2 0 R >>');
-    objs.push('<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.W} ${this.H}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> /XObject << ${imgRefs} >> >> /Contents 6 0 R >>`);
+    objs.push(`<< /Type /Pages /Kids [${this.pages.map((_, i) => `${5 + 2 * i} 0 R`).join(' ')}] /Count ${n} >>`);
     objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
-    objs.push({ dict: `<< /Length ${content.length} >>`, data: enc(content) });
+    this.pages.forEach((ops, i) => {
+      const content = ops.join('\n');
+      objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.W} ${this.H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << ${imgRefs} >> >> /Contents ${6 + 2 * i} 0 R >>`);
+      objs.push({ dict: `<< /Length ${content.length} >>`, data: enc(content) });
+    });
     for (const im of this.images) objs.push({ dict: `<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace ${im.cs} /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.bytes.length} >>`, data: im.bytes });
     objs.forEach((o, i) => {
       offsets.push(pos);

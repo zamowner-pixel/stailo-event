@@ -49,6 +49,7 @@ export function fmtRange(a, b) {
 export function render(html) {
   // Paparan lebar (tablet / laptop) hanya selepas log masuk
   document.body.classList.toggle('in-app', !!state.session && /class="bottom-nav/.test(html));
+  document.body.classList.toggle('draw-mode', /class="draw-stage/.test(html));
   $('#app').innerHTML = html;
   window.scrollTo(0, 0);
 }

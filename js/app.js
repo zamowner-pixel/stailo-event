@@ -5,9 +5,14 @@ import { pickLotView, payView, myBookingsView, clearTimers } from './views-vendo
 import { adminHomeView, adminLotsView, adminInvoicesView, invoiceFormView, settingsView, vendorsView } from './views-admin.js';
 import { invoiceView } from './views-invoice.js';
 import { agreementView, agreementsListView, clearAgreementTimers } from './views-agreement.js';
+import { luckyJoinView, drawLoginView, drawConsoleView, adminLuckyView, clearLuckyTimers } from './views-lucky.js';
 
-// [corak, paparan, siapa boleh akses: 'guest' | 'any' | 'vendor' | 'admin']
+// [corak, paparan, siapa boleh akses: 'guest' | 'public' | 'any' | 'vendor' | 'admin' | 'draw']
 const routes = [
+  [/^\/c\/(?<id>[0-9a-f-]{36})$/, luckyJoinView, 'public'],
+  [/^\/cabutan\/masuk$/, drawLoginView, 'public'],
+  [/^\/cabutan$/, drawConsoleView, 'draw'],
+  [/^\/a\/cabutan$/, adminLuckyView, 'admin'],
   [/^\/?$/, () => welcomeView('start'), 'guest'],
   [/^\/masuk$/, () => welcomeView('login'), 'guest'],
   [/^\/daftar$/, () => go('#/masuk'), 'guest'],
@@ -29,7 +34,14 @@ const routes = [
   [/^\/a\/tetapan$/, settingsView, 'admin']
 ];
 
-const homeFor = () => (state.profile?.role === 'admin' ? '#/a' : '#/v');
+const homeFor = () => {
+  // Log masuk dari page petugas cabutan → terus ke skrin cabutan
+  let after = ''; try { after = localStorage.getItem('afterLogin') || ''; localStorage.removeItem('afterLogin'); } catch {}
+  const role = state.profile?.role;
+  if (role === 'draw') return '#/cabutan';
+  if (after === '#/cabutan' && role === 'admin') return '#/cabutan';
+  return role === 'admin' ? '#/a' : '#/v';
+};
 
 async function loadProfile() {
   if (!state.session) { state.profile = null; return; }
@@ -43,6 +55,7 @@ async function router() {
   closeSheet();
   clearTimers();
   clearAgreementTimers();
+  clearLuckyTimers();
   const raw = location.hash.replace(/^#/, '') || '/';
   const [path, qs] = raw.split('?');
   const query = new URLSearchParams(qs || '');
@@ -53,8 +66,13 @@ async function router() {
     if (my !== routing) return;
     if (!match) return go(state.session ? homeFor() : '#/');
     const [m, view, who] = match;
+    if (who === 'public') { stopMusic(); return await view(m.groups || {}, query); }
     if (who === 'guest' && state.session) return go(homeFor());
+    if (who === 'draw' && !state.session) return go('#/cabutan/masuk');
     if (who !== 'guest' && !state.session) return go('#/masuk');
+    // Petugas cabutan hanya boleh buka skrin cabutan
+    if (state.profile.role === 'draw' && who !== 'draw') return go('#/cabutan');
+    if (who === 'draw' && !['draw', 'admin'].includes(state.profile.role)) return go(homeFor());
     if (who === 'admin' && state.profile.role !== 'admin') return go('#/v');
     if (who === 'vendor' && state.profile.role === 'admin') return go('#/a');
     if (who !== 'guest' && state.profile.role === 'vendor' && !state.profile.is_active) {

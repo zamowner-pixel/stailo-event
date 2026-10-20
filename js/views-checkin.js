@@ -72,10 +72,12 @@ const phoneOk = (p) => /^01[0-9]{8,9}$/.test(String(p || ''));
 // =============================================================
 export async function adminGatheringsView() {
   loading();
-  const [list, people] = await Promise.all([
+  const [list, people, events] = await Promise.all([
     must(sb.from('gatherings').select('*').order('created_at', { ascending: false })),
-    must(sb.from('gathering_people').select('gathering_id,checked_in_at'))
+    fetchAll(sb.from('gathering_people').select('gathering_id,checked_in_at')),
+    must(sb.from('events').select('id,name,start_date,end_date,location').order('created_at', { ascending: false }))
   ]);
+  const evName = (g) => events.find((e) => e.id === g.event_id)?.name;
   const count = (id) => people.filter((p) => p.gathering_id === id);
   render(`<div class="page">${topbar('Pendaftaran kehadiran', { back: '#/a', sub: 'Check-in QR & serahan barang', right: `<a class="btn sm ghost" href="#/kaunter">${icon('ticket', 16)} Skrin kaunter</a>` })}
     <div class="content">
@@ -85,22 +87,48 @@ export async function adminGatheringsView() {
         return `<a class="card stack" href="#/a/kehadiran/${g.id}" style="color:var(--text);gap:6px">
           <div class="row between" style="align-items:flex-start"><b style="font-size:16px">${esc(g.name)}</b>${g.is_open ? '<span class="badge green">Kaunter dibuka</span>' : '<span class="badge gray">Kaunter ditutup</span>'}</div>
           <span class="small muted">${esc([g.event_date ? fmtDate(g.event_date) : 'Tarikh belum ditetapkan', g.venue].filter(Boolean).join(' · '))}</span>
+          <span>${evName(g) ? `<span class="badge amber">Event: ${esc(evName(g))}</span>` : '<span class="badge dark">Private event</span>'}</span>
           <div class="row" style="gap:18px;margin-top:4px"><span class="stat"><b>${ps.length}</b><span class="small muted">peserta</span></span><span class="stat"><b>${hadir}</b><span class="small muted">hadir</span></span></div>
         </a>`;
       }).join('')}</div>` : `<div class="card stack"><b>Belum ada program</b><span class="small muted">Cipta program (cth gathering), kemudian masukkan senarai peserta. Setiap peserta akan dapat ID dan QR sendiri untuk check-in di kaunter.</span></div>`}
     </div>${nav('#/a')}</div>`);
   document.getElementById('newg').onclick = () => {
+    let kind = events.length ? 'event' : 'private';
     const s = openSheet(`<h2>Program baru</h2>
+      <div class="ci-kind" role="radiogroup" aria-label="Jenis program">
+        <button type="button" data-kind="event" role="radio"${events.length ? '' : ' disabled'}><b>${icon('grid', 18)} Event sedia ada</b><span>Pendaftaran untuk event yang sudah ada dalam apps (menu Tapak)</span></button>
+        <button type="button" data-kind="private" role="radio"><b>${icon('lock', 18)} Private event</b><span>Program sendiri tanpa vendor, cth gathering, majlis atau jamuan tertutup</span></button>
+      </div>
       <form id="gf" class="stack">
+        <label class="field" id="g-evwrap">Pilih event<select class="input" name="ev" id="g-ev">${events.map((e) => `<option value="${e.id}">${esc(e.name)}${e.start_date ? ' · ' + esc(fmtDate(e.start_date)) : ''}</option>`).join('')}</select></label>
         <label class="field">Nama program<input class="input" name="name" id="g-name" required maxlength="120" placeholder="Cth: Gathering Superbike 2027"></label>
-        <div class="small muted">Tarikh, lokasi, barang dan maklumat lain boleh diisi kemudian.</div>
+        <div class="small muted" id="g-hint"></div>
         <button class="btn block" type="submit">Cipta program</button>
       </form>`);
-    s.querySelector('#gf').onsubmit = (e) => {
+    const f = s.querySelector('#gf');
+    const setKind = (k) => {
+      kind = k;
+      s.querySelectorAll('[data-kind]').forEach((b) => { b.classList.toggle('on', b.dataset.kind === k); b.setAttribute('aria-checked', b.dataset.kind === k); });
+      s.querySelector('#g-evwrap').classList.toggle('hidden', k !== 'event');
+      if (k === 'event') { const ev = events.find((e) => e.id === f.ev.value); f.name.value = ev ? ev.name : ''; }
+      else if (events.some((e) => e.name === f.name.value)) f.name.value = '';
+      s.querySelector('#g-hint').textContent = k === 'event'
+        ? 'Tarikh dan lokasi diambil dari event. Barang dan maklumat lain boleh diisi kemudian.'
+        : 'Tarikh, lokasi, barang dan maklumat lain boleh diisi kemudian.';
+    };
+    s.querySelectorAll('[data-kind]').forEach((b) => (b.onclick = () => setKind(b.dataset.kind)));
+    f.ev.onchange = () => setKind('event');
+    setKind(kind);
+    f.onsubmit = (e) => {
       e.preventDefault();
-      busy(e.target.querySelector('button'), async () => {
+      busy(f.querySelector('button[type=submit]'), async () => {
         try {
-          const g = await must(sb.from('gatherings').insert({ name: e.target.name.value.trim() }).select().single());
+          const row = { name: f.name.value.trim() };
+          if (kind === 'event') {
+            const ev = events.find((x) => x.id === f.ev.value);
+            Object.assign(row, { event_id: ev.id, event_date: ev.start_date || null, venue: ev.location || '' });
+          }
+          const g = await must(sb.from('gatherings').insert(row).select().single());
           closeSheet(); go('#/a/kehadiran/' + g.id);
         } catch (err) { fail(err); }
       });
@@ -113,12 +141,14 @@ export async function adminGatheringsView() {
 // =============================================================
 export async function adminGatheringView({ id }, query) {
   loading();
-  const [g, people, handovers, crew] = await Promise.all([
+  const [g, people, handovers, crew, events] = await Promise.all([
     must(sb.from('gatherings').select('*').eq('id', id).single()),
     fetchAll(sb.from('gathering_people').select('*').eq('gathering_id', id).order('code')),
     fetchAll(sb.from('gathering_handovers').select('*').eq('gathering_id', id).order('given_at')),
-    must(sb.from('profiles').select('vendor_code,is_active').eq('role', 'crew'))
+    must(sb.from('profiles').select('vendor_code,is_active').eq('role', 'crew')),
+    must(sb.from('events').select('id,name,start_date,end_date,location').order('created_at', { ascending: false }))
   ]);
+  const linked = events.find((e) => e.id === g.event_id);
   const reload = () => go(`#/a/kehadiran/${id}?t=${Date.now()}`);
   const items = g.items || [];
   const byPerson = handovers.reduce((a, h) => { (a[h.person_id] ||= []).push(h); return a; }, {});
@@ -141,6 +171,7 @@ export async function adminGatheringView({ id }, query) {
         <div class="card stack">
           <div class="row between"><b>Butiran program</b><button class="btn ghost sm" id="gedit">${icon('edit', 16)} Edit</button></div>
           ${missing.length ? `<div class="ci-warn">${icon('bell', 16)} Belum diisi: ${esc(missing.join(', '))}. Lengkapkan dahulu sebelum hantar WhatsApp.</div>` : ''}
+          <div class="ci-kv"><span>Jenis</span><b>${linked ? 'Event: ' + esc(linked.name) : 'Private event'}</b></div>
           <div class="ci-kv"><span>Tarikh</span><b>${esc(g.event_date ? fmtDate(g.event_date) : '—')} ${esc(g.event_time || '')}</b></div>
           <div class="ci-kv"><span>Lokasi</span><b>${esc(g.venue || '—')}</b></div>
           <div class="ci-kv"><span>Maklumat</span><b style="white-space:pre-line">${esc(g.info || '—')}</b></div>
@@ -266,6 +297,10 @@ export async function adminGatheringView({ id }, query) {
   document.getElementById('gedit').onclick = () => {
     const s = openSheet(`<h2>Butiran program</h2>
       <form id="gdf" class="stack">
+        <label class="field">Jenis program<select class="input" name="ev" id="gd-ev">
+          <option value="">Private event (tanpa vendor)</option>
+          ${events.map((e) => `<option value="${e.id}"${e.id === g.event_id ? ' selected' : ''}>Event: ${esc(e.name)}</option>`).join('')}
+        </select></label>
         <label class="field">Nama program<input class="input" name="name" id="gd-name" required maxlength="120" value="${esc(g.name)}"></label>
         <div class="grid2">
           <label class="field">Tarikh<input class="input" type="date" name="d" id="gd-date" value="${esc(g.event_date || '')}"></label>
@@ -280,12 +315,19 @@ export async function adminGatheringView({ id }, query) {
         </details>
         <button class="btn block" type="submit">Simpan butiran</button>
       </form>`);
+    const df = s.querySelector('#gdf');
+    df.ev.onchange = () => {
+      const ev = events.find((x) => x.id === df.ev.value);
+      if (!ev) return;
+      if (!df.d.value && ev.start_date) df.d.value = ev.start_date;
+      if (!df.v.value.trim() && ev.location) df.v.value = ev.location;
+    };
     s.querySelector('#gdf').onsubmit = (e) => {
       e.preventDefault();
       const f = e.target;
       busy(f.querySelector('button[type=submit]'), async () => {
         try {
-          const row = { name: f.name.value.trim(), event_date: f.d.value || null, event_time: f.t.value.trim(), venue: f.v.value.trim(), info: f.info.value.trim(), wa_template: f.tpl.value.trim() };
+          const row = { event_id: f.ev.value || null, name: f.name.value.trim(), event_date: f.d.value || null, event_time: f.t.value.trim(), venue: f.v.value.trim(), info: f.info.value.trim(), wa_template: f.tpl.value.trim() };
           if (!people.length) row.code_prefix = (f.pre.value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '') || 'P');
           await must(sb.from('gatherings').update(row).eq('id', id));
           closeSheet(); toast('Butiran disimpan'); reload();

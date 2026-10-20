@@ -7,7 +7,7 @@ const LIBS = {
   JSZip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   XLSX: 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
 };
-function loadLib(name) {
+export function loadLib(name) {
   if (window[name]) return Promise.resolve(window[name]);
   return new Promise((res, rej) => {
     const s = document.createElement('script');

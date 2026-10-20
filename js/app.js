@@ -6,9 +6,15 @@ import { adminHomeView, adminLotsView, adminInvoicesView, invoiceFormView, setti
 import { invoiceView } from './views-invoice.js';
 import { agreementView, agreementsListView, clearAgreementTimers } from './views-agreement.js';
 import { luckyJoinView, drawLoginView, drawConsoleView, adminLuckyView, clearLuckyTimers } from './views-lucky.js';
+import { adminGatheringsView, adminGatheringView, ticketView, crewLoginView, crewConsoleView, clearCheckinTimers } from './views-checkin.js';
 
-// [corak, paparan, siapa boleh akses: 'guest' | 'public' | 'any' | 'vendor' | 'admin' | 'draw']
+// [corak, paparan, siapa boleh akses: 'guest' | 'public' | 'any' | 'vendor' | 'admin' | 'draw' | 'crew']
 const routes = [
+  [/^\/t\/(?<token>[0-9a-f-]{36})$/, ticketView, 'public'],
+  [/^\/kaunter\/masuk$/, crewLoginView, 'public'],
+  [/^\/kaunter$/, crewConsoleView, 'crew'],
+  [/^\/a\/kehadiran$/, adminGatheringsView, 'admin'],
+  [/^\/a\/kehadiran\/(?<id>[0-9a-f-]{36})$/, adminGatheringView, 'admin'],
   [/^\/c\/(?<id>[0-9a-f-]{36})$/, luckyJoinView, 'public'],
   [/^\/cabutan\/masuk$/, drawLoginView, 'public'],
   [/^\/cabutan$/, drawConsoleView, 'draw'],
@@ -39,7 +45,9 @@ const homeFor = () => {
   let after = ''; try { after = localStorage.getItem('afterLogin') || ''; localStorage.removeItem('afterLogin'); } catch {}
   const role = state.profile?.role;
   if (role === 'draw') return '#/cabutan';
+  if (role === 'crew') return '#/kaunter';
   if (after === '#/cabutan' && role === 'admin') return '#/cabutan';
+  if (after === '#/kaunter' && role === 'admin') return '#/kaunter';
   return role === 'admin' ? '#/a' : '#/v';
 };
 
@@ -56,6 +64,7 @@ async function router() {
   clearTimers();
   clearAgreementTimers();
   clearLuckyTimers();
+  clearCheckinTimers();
   const raw = location.hash.replace(/^#/, '') || '/';
   const [path, qs] = raw.split('?');
   const query = new URLSearchParams(qs || '');
@@ -69,11 +78,14 @@ async function router() {
     if (who === 'public') { stopMusic(); return await view(m.groups || {}, query); }
     if (who === 'guest' && state.session) return go(homeFor());
     if (who === 'draw' && !state.session) return go('#/cabutan/masuk');
+    if (who === 'crew' && !state.session) return go('#/kaunter/masuk');
     if (who !== 'guest' && !state.session) return go('#/masuk');
     // Petugas cabutan hanya boleh buka skrin cabutan
     const role = state.profile?.role;
     if (state.session && role === 'draw' && who !== 'draw' && who !== 'guest') return go('#/cabutan');
+    if (state.session && role === 'crew' && who !== 'crew' && who !== 'guest') return go('#/kaunter');
     if (who === 'draw' && !['draw', 'admin'].includes(role)) return go(homeFor());
+    if (who === 'crew' && !['crew', 'admin'].includes(role)) return go(homeFor());
     if (who === 'admin' && role !== 'admin') return go('#/v');
     if (who === 'vendor' && role !== 'vendor') return go(homeFor());
     if (who !== 'guest' && role === 'vendor' && !state.profile.is_active) {

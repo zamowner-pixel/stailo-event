@@ -630,3 +630,11 @@ body.kt-mode #app { max-width: 720px; }
 .ag-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: var(--text); }
 .ag-acts { display: flex; align-items: center; gap: 6px; flex: none; }
 @media (max-width: 520px) { .ag-row { flex-wrap: wrap; } .ag-acts { width: 100%; justify-content: flex-end; } }
+.tk-with { font-size: 13px; color: #555; margin-top: 2px; }
+.tk-with b { color: #111; }
+.kt-mates { display: flex; flex-direction: column; gap: 6px; }
+.kt-mates > small { font-size: 11px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
+.kt-mate { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-2); color: var(--text); cursor: pointer; }
+.kt-mate b { color: var(--accent); min-width: 54px; }
+.kt-mate span { flex: 1; min-width: 0; font-weight: 600; }
+.kt-mate em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--green); display: flex; align-items: center; gap: 3px; }

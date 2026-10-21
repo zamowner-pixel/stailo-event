@@ -45,19 +45,23 @@ Saiz baju: {saiz}
 Sila tunjukkan kod QR anda di kaunter pendaftaran. Buka pautan ini dan simpan gambar tiket (screenshot) sebelum sampai:
 {pautan}
 
+{pasangan}
+
 {info}
 
 Terima kasih.`;
 
 const detailsMissing = (g) => [!g.name?.trim() && 'nama program', !g.event_date && 'tarikh', !g.venue?.trim() && 'lokasi'].filter(Boolean);
 
-export function waMessage(g, p) {
+export function waMessage(g, p, partners = []) {
   const vals = {
     nama: p.name, program: g.name, tarikh: g.event_date ? fmtDate(g.event_date) : '', masa: g.event_time || '',
     lokasi: g.venue || '', kod: p.code, plat: p.plate || '', saiz: p.size || '', kategori: p.category || '',
-    pautan: ticketUrl(p.token), info: g.info || ''
+    pautan: ticketUrl(p.token), info: g.info || '',
+    pasangan: partners.map((x) => `Tiket pasangan: *${x.name}* (${x.code})\n${ticketUrl(x.token)}`).join('\n\n')
   };
-  const tpl = (g.wa_template || '').trim() || DEFAULT_TEMPLATE;
+  let tpl = (g.wa_template || '').trim() || DEFAULT_TEMPLATE;
+  if (partners.length && !tpl.includes('{pasangan}')) tpl += '\n\n{pasangan}';
   // Baris yang semua medannya kosong dibuang (cth tiada no. plat)
   const lines = tpl.split('\n').filter((line) => {
     const keys = [...line.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).filter((k) => k in vals);
@@ -155,7 +159,16 @@ export async function adminGatheringView({ id }, query) {
   const hadir = people.filter((p) => p.checked_in_at).length;
   const waSent = people.filter((p) => p.wa_sent_at).length;
   const missing = detailsMissing(g);
-  const pendingWa = () => people.filter((p) => !p.wa_sent_at && phoneOk(p.phone));
+  const byId = Object.fromEntries(people.map((p) => [p.id, p]));
+  const partnersOf = (p) => people.filter((x) => x.parent_id === p.id);
+  const msgFor = (p) => waMessage(g, p, partnersOf(p));
+  // Pasangan dihantar bersama mesej peserta utama
+  const pendingWa = () => people.filter((p) => !p.wa_sent_at && phoneOk(p.phone) && !(p.parent_id && byId[p.parent_id]));
+  const stampSent = (p) => {
+    const at = new Date().toISOString();
+    const ids = [p, ...partnersOf(p)].filter((x) => !x.wa_sent_at).map((x) => { x.wa_sent_at = at; return x.id; });
+    if (ids.length) sb.from('gathering_people').update({ wa_sent_at: at }).in('id', ids).then(({ error }) => error && fail(error));
+  };
   let filter = query.get('f') || 'all', q = '', shown = 60;
 
   render(`<div class="page">${topbar(g.name, { back: '#/a/kehadiran', sub: esc([g.event_date ? fmtDate(g.event_date) : '', g.venue].filter(Boolean).join(' · ') || 'Butiran belum lengkap'), right: `<a class="btn sm" href="#/kaunter?g=${g.id}">${icon('ticket', 16)} Kaunter</a>` })}
@@ -244,8 +257,8 @@ export async function adminGatheringView({ id }, query) {
         <span class="code-tile" style="min-width:64px;font-size:13px">${esc(p.code)}</span>
         <span class="grow"><span class="title">${esc(p.name)}</span>
           <span class="small muted">${esc([p.plate, p.size && 'Saiz ' + p.size, p.category, p.phone].filter(Boolean).join(' · ') || '—')}</span>
-          <span class="row" style="gap:6px;flex-wrap:wrap">${p.checked_in_at ? `<span class="badge green">Hadir ${hhmm(p.checked_in_at)}</span>` : '<span class="badge gray">Belum hadir</span>'}${items.length ? `<span class="badge ${got >= items.length ? 'green' : got ? 'amber' : 'gray'}">Barang ${got}/${items.length}</span>` : ''}${p.wa_sent_at ? '<span class="badge green">WA ✓</span>' : ''}${p.walkin ? '<span class="badge amber">Walk-in</span>' : ''}</span></span>
-        ${phoneOk(p.phone) ? `<a class="icon-btn ci-wa" href="${esc(waLink(p.phone, waMessage(g, p)))}" target="_blank" rel="noopener" data-wa="${p.id}" aria-label="Hantar WhatsApp kepada ${esc(p.name)}">${icon('wa', 18)}</a>` : ''}
+          <span class="row" style="gap:6px;flex-wrap:wrap">${p.checked_in_at ? `<span class="badge green">Hadir ${hhmm(p.checked_in_at)}</span>` : '<span class="badge gray">Belum hadir</span>'}${items.length ? `<span class="badge ${got >= items.length ? 'green' : got ? 'amber' : 'gray'}">Barang ${got}/${items.length}</span>` : ''}${p.wa_sent_at ? '<span class="badge green">WA ✓</span>' : ''}${p.walkin ? '<span class="badge amber">Walk-in</span>' : ''}${p.parent_id && byId[p.parent_id] ? `<span class="badge gray">Pasangan ${esc(byId[p.parent_id].code)}</span>` : ''}${partnersOf(p).length ? `<span class="badge gray">+ ${partnersOf(p).map((x) => esc(x.code)).join(', ')}</span>` : ''}</span></span>
+        ${phoneOk(p.phone) ? `<a class="icon-btn ci-wa" href="${esc(waLink(p.phone, msgFor(p)))}" target="_blank" rel="noopener" data-wa="${p.id}" aria-label="Hantar WhatsApp kepada ${esc(p.name)}">${icon('wa', 18)}</a>` : ''}
       </div>`;
     }).join('')}</div>${rows.length > shown ? `<button class="btn ghost block" id="pmore" style="margin-top:10px">Tunjuk lagi (${rows.length - shown})</button>` : ''}`;
     el.querySelectorAll('[data-pid]').forEach((r) => {
@@ -258,13 +271,7 @@ export async function adminGatheringView({ id }, query) {
     }));
     document.getElementById('pmore')?.addEventListener('click', () => { shown += 200; drawList(); });
   };
-  const markSent = async (pid) => {
-    const p = people.find((x) => x.id === pid);
-    if (!p || p.wa_sent_at) return;
-    p.wa_sent_at = new Date().toISOString();
-    sb.from('gathering_people').update({ wa_sent_at: p.wa_sent_at }).eq('id', pid).then(({ error }) => error && fail(error));
-    setTimeout(drawList, 300);
-  };
+  const markSent = (pid) => { const p = byId[pid]; if (!p) return; stampSent(p); setTimeout(drawList, 300); };
   drawList();
   let tmr;
   document.getElementById('psearch').oninput = (e) => { clearTimeout(tmr); tmr = setTimeout(() => { q = e.target.value.trim(); shown = 60; drawList(); }, 150); };
@@ -310,7 +317,7 @@ export async function adminGatheringView({ id }, query) {
         <label class="field">Maklumat untuk peserta<textarea class="input" name="info" id="gd-info" rows="3" maxlength="800" placeholder="Cth: Parkir motor di Zon B. Sila hadir 30 minit awal.">${esc(g.info || '')}</textarea></label>
         <label class="field">Awalan ID peserta<input class="input" name="pre" id="gd-pre" maxlength="6" value="${esc(g.code_prefix || 'P')}" style="text-transform:uppercase;width:120px"${people.length ? ' disabled title="Tidak boleh ditukar selepas peserta dimasukkan"' : ''}></label>
         <details class="ci-details"><summary>Mesej WhatsApp (pilihan)</summary>
-          <div class="small muted" style="margin:6px 0">Kosongkan untuk guna mesej asal. Kod yang boleh digunakan: {nama} {kod} {plat} {saiz} {kategori} {program} {tarikh} {masa} {lokasi} {info} {pautan}</div>
+          <div class="small muted" style="margin:6px 0">Kosongkan untuk guna mesej asal. Kod yang boleh digunakan: {nama} {kod} {plat} {saiz} {kategori} {program} {tarikh} {masa} {lokasi} {info} {pautan} {pasangan}</div>
           <textarea class="input" name="tpl" id="gd-tpl" rows="10" maxlength="2000" placeholder="${esc(DEFAULT_TEMPLATE)}">${esc(g.wa_template || '')}</textarea>
         </details>
         <button class="btn block" type="submit">Simpan butiran</button>
@@ -372,7 +379,9 @@ export async function adminGatheringView({ id }, query) {
       </div>
       ${items.length ? `<div class="stack" style="gap:6px">${items.map((it) => { const h = hs.find((x) => x.item === it); return `<div class="row between small" style="padding:8px 12px;border-radius:10px;background:var(--card-2)"><b>${esc(it)}</b>${h ? `<span class="row" style="gap:8px"><span class="badge green">${esc(hhmm(h.given_at))} · ${esc(h.given_by)}</span><button class="btn ghost sm" data-undo="${esc(it)}" style="height:30px">Batal</button></span>` : '<span class="badge gray">Belum ambil</span>'}</div>`; }).join('')}</div>` : ''}
       <div class="grid2">
-        ${phoneOk(p.phone) ? `<a class="btn" id="pwa" href="${esc(waLink(p.phone, waMessage(g, p)))}" target="_blank" rel="noopener">${icon('wa', 18)} WhatsApp</a>` : '<button class="btn" disabled>Tiada no. telefon</button>'}
+        ${p.parent_id && byId[p.parent_id] ? `<div class="small muted" style="grid-column:1/-1">Pasangan kepada <b>${esc(byId[p.parent_id].name)}</b> (${esc(byId[p.parent_id].code)}). Tiket ini dihantar bersama mesej WhatsApp ${esc(byId[p.parent_id].name.split(' ')[0])}.</div>` : ''}
+        ${partnersOf(p).length ? `<div class="small muted" style="grid-column:1/-1">Datang bersama: <b>${partnersOf(p).map((x) => esc(x.name) + ' (' + esc(x.code) + ')').join(', ')}</b>. Tiket pasangan disertakan dalam mesej WhatsApp.</div>` : ''}
+        ${phoneOk(p.phone) ? `<a class="btn" id="pwa" href="${esc(waLink(p.phone, msgFor(p)))}" target="_blank" rel="noopener">${icon('wa', 18)} WhatsApp</a>` : '<button class="btn" disabled>Tiada no. telefon</button>'}
         <button class="btn ghost" id="pcopy">Salin pautan tiket</button>
       </div>
       <form id="pef" class="stack">${personForm(p)}<button class="btn dark block" type="submit">Simpan perubahan</button></form>
@@ -383,7 +392,7 @@ export async function adminGatheringView({ id }, query) {
     s.querySelector('#pcopy').onclick = () => copyText(url);
     s.querySelector('#pwa')?.addEventListener('click', (e) => {
       if (missing.length) { e.preventDefault(); toast('Lengkapkan butiran program dahulu (' + missing.join(', ') + ')', 'error'); return; }
-      sb.from('gathering_people').update({ wa_sent_at: new Date().toISOString() }).eq('id', p.id).then(() => {});
+      stampSent(p);
     });
     s.querySelectorAll('[data-undo]').forEach((b) => (b.onclick = () => busy(b, async () => {
       try { await must(sb.rpc('gt_undo', { p_person: p.id, p_item: b.dataset.undo })); toast(`${b.dataset.undo} dibatalkan`); reload(); } catch (err) { fail(err); }
@@ -420,19 +429,15 @@ export async function adminGatheringView({ id }, query) {
         return;
       }
       const p = queue[i];
-      const msg = waMessage(g, p);
+      const msg = msgFor(p);
       const s = openSheet(`<div class="row between"><h2 style="margin:0">Hantar WhatsApp</h2><span class="badge gray">${i + 1} / ${queue.length}</span></div>
         <div class="ci-progress"><i style="width:${Math.round((i / queue.length) * 100)}%"></i></div>
-        <div class="card stack" style="background:var(--card-2);gap:4px"><b style="font-size:18px">${esc(p.name)}</b><span class="small muted">${esc(p.code)} · ${esc(p.phone)}${p.plate ? ' · ' + esc(p.plate) : ''}</span></div>
+        <div class="card stack" style="background:var(--card-2);gap:4px"><b style="font-size:18px">${esc(p.name)}</b><span class="small muted">${esc(p.code)} · ${esc(p.phone)}${p.plate ? ' · ' + esc(p.plate) : ''}${partnersOf(p).length ? ' · + pasangan ' + partnersOf(p).map((x) => esc(x.name)).join(', ') : ''}</span></div>
         <div class="ci-msg">${esc(msg)}</div>
         <a class="btn block" id="wgo" href="${esc(waLink(p.phone, msg))}" target="_blank" rel="noopener">${icon('wa', 18)} Buka WhatsApp ${esc(p.name.split(' ')[0])}</a>
         <div class="grid2"><button class="btn ghost" id="wskip">Langkau</button><button class="btn ghost" id="wstop">Berhenti</button></div>
         <div class="small muted">Tekan butang hijau, tekan <b>Send</b> dalam WhatsApp, kemudian kembali ke apps ini untuk peserta seterusnya.</div>`);
-      s.querySelector('#wgo').onclick = () => {
-        sb.from('gathering_people').update({ wa_sent_at: new Date().toISOString() }).eq('id', p.id).then(({ error }) => error && fail(error));
-        p.wa_sent_at = new Date().toISOString();
-        i++; setTimeout(step, 600);
-      };
+      s.querySelector('#wgo').onclick = () => { stampSent(p); i++; setTimeout(step, 600); };
       s.querySelector('#wskip').onclick = () => { i++; step(); };
       s.querySelector('#wstop').onclick = () => { closeSheet(); reload(); };
     };
@@ -444,11 +449,11 @@ export async function adminGatheringView({ id }, query) {
     try {
       const XLSX = await loadLib('XLSX');
       const ws = XLSX.utils.aoa_to_sheet([
-        ['Nama', 'No. Telefon', 'No. Plat', 'Saiz Baju', 'Kategori', 'Nota'],
-        ['Ahmad bin Ali', '0123456789', 'PKA 1234', 'L', 'Rider', ''],
-        ['Siti binti Abu', '0198765432', 'PKA 1234', 'M', 'Pillion', '']
+        ['Nama', 'No. Telefon', 'No. Plat', 'Saiz Baju', 'Kategori', 'Nama Pasangan', 'Saiz Baju Pasangan', 'Nota'],
+        ['Ahmad bin Ali', '0123456789', 'PKA 1234', 'L', 'RT1300', 'Siti binti Abu', 'M', ''],
+        ['Lim Wei Jie', '0198765432', 'PKB 88', 'XL', 'RTAC', 'Solo', '', '']
       ]);
-      ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 24 }];
+      ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 28 }, { wch: 18 }, { wch: 24 }];
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Peserta');
       downloadBlob(new Blob([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Templat peserta.xlsx');
     } catch (err) { fail(err); }
@@ -490,27 +495,63 @@ async function fetchAll(q) {
 }
 
 // ---------- Import Excel / CSV ----------
-const COLS = [
-  ['name', /^(nama|name)|nama\s*penuh|full\s*name/],
-  ['phone', /tel|phone|hp|fon|whatsapp/],
-  ['plate', /plat|plate|kenderaan|motor|vehicle/],
-  ['size', /saiz|size|baju|shirt/],
-  ['category', /kategori|category|jenis|peranan|rider|pillion|role/],
-  ['note', /nota|catatan|note|remark|kelab|club/]
-];
+// Kenal pasti lajur ikut tajuk (BM / English). Lajur lain yang berguna (cth Nickname, Bayaran)
+// disimpan dalam Nota supaya krew kaunter nampak.
+const normHead = (h) => String(h || '').toLowerCase().replace(/[:\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+const HEAD = {
+  partner: /pasangan|partner|spouse|isteri|suami/,
+  phone: /tel|phone|hp|fon|whatsapp|mobile/,
+  plate: /plat|plet|plate|registration|pendaftaran|kenderaan|vehicle/,
+  size: /saiz|size|baju|shirt|jersi|jersey/,
+  category: /kategori|category|jenis|peranan|rider|pillion|role|model/,
+  note: /^(nota|catatan|note|remark)/,
+  name: /^(nama|name)\b|nama penuh|full name/
+};
+const SKIP = /^(bil|no|no\.|#)$|e-?mail|e-?mel|tarikh|date|masa|timestamp|status kehadiran|attendance|^column\s*\d+$/;
+const KEYS = ['partner', 'phone', 'plate', 'size', 'category', 'note', 'name'];
+
 function mapHeaders(headers) {
-  const map = {};
+  const map = {}; const sizes = []; const extra = [];
   headers.forEach((h, i) => {
-    const t = String(h || '').toLowerCase().trim();
-    const hit = COLS.find(([k, re]) => !(k in map) && re.test(t));
-    if (hit) map[hit[0]] = i;
+    const t = normHead(h);
+    if (!t) return;
+    if (HEAD.size.test(t) && !HEAD.partner.test(t)) { sizes.push(i); return; }
+    const k = KEYS.find((key) => key !== 'size' && !(key in map) && HEAD[key].test(t));
+    if (k) map[k] = i;
+    else if (!SKIP.test(t)) extra.push([i, String(h).replace(/[:\n\r]+/g, ' ').replace(/\s+/g, ' ').trim()]);
   });
-  return map;
+  // Dua lajur saiz: yang selepas lajur "Nama Pasangan" ialah saiz pasangan
+  if (sizes.length) {
+    const ps = 'partner' in map && sizes.length > 1 ? sizes.find((i) => i > map.partner) : undefined;
+    if (ps !== undefined) map.partner_size = ps;
+    map.size = sizes.find((i) => i !== ps);
+    sizes.filter((i) => i !== map.size && i !== ps).forEach((i) => extra.push([i, String(headers[i]).trim()]));
+  }
+  return { map, extra };
 }
+// Baris tajuk = baris (dalam 15 baris pertama) yang paling banyak tajuk dikenali & ada lajur Nama
+function findHeaderRow(aoa) {
+  let best = -1, score = 0;
+  aoa.slice(0, 15).forEach((r, i) => {
+    const heads = r.map(normHead);
+    if (!heads.some((t) => HEAD.name.test(t))) return;
+    const n = heads.filter((t) => t && Object.values(HEAD).some((re) => re.test(t))).length;
+    if (n > score) { score = n; best = i; }
+  });
+  return best;
+}
+// No. telefon dari Excel selalu hilang 0 di depan (cth 193572621 → 0193572621)
+function cleanPhone(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.startsWith('60')) d = '0' + d.slice(2);
+  if (/^1\d{7,9}$/.test(d)) d = '0' + d;
+  return d;
+}
+const noPartner = (s) => !s || /^(solo|tiada|tidak|none|nil|no|-+|n\/?a)$/i.test(s.trim());
 
 function importSheet(g, existing, reload) {
   const s = openSheet(`<h2>Import senarai peserta</h2>
-    <p class="small muted" style="margin:0">Pilih fail Excel (.xlsx) atau CSV. Baris pertama mesti tajuk lajur, cth: <b>Nama, No. Telefon, No. Plat, Saiz Baju, Kategori, Nota</b>. Hanya lajur Nama yang wajib. ID peserta dijana automatik.</p>
+    <p class="small muted" style="margin:0">Pilih fail Excel (.xlsx) atau CSV. Sistem cari baris tajuk sendiri (boleh ada tajuk program di atas). Lajur dikenali: <b>Nama, No. Telefon, No. Plat, Saiz Baju, Nama Pasangan, Saiz Baju Pasangan, Kategori / Model</b>. Lajur lain (cth Nickname, Bayaran) disimpan dalam Nota. Hanya lajur Nama yang wajib.</p>
     <label class="btn ghost block" style="cursor:pointer">${icon('upload', 18)} Pilih fail<input type="file" id="ifile" accept=".xlsx,.xls,.csv" hidden></label>
     <div id="iprev"></div>`);
   s.querySelector('#ifile').onchange = async (e) => {
@@ -521,38 +562,58 @@ function importSheet(g, existing, reload) {
     try {
       const XLSX = await loadLib('XLSX');
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false });
-      const hi = aoa.findIndex((r) => r.some((c) => /nama|name/i.test(String(c))));
-      if (hi < 0) throw new Error('Lajur "Nama" tidak dijumpai di baris tajuk.');
-      const map = mapHeaders(aoa[hi]);
+      // Helaian pertama yang ada lajur Nama
+      let aoa = [], hi = -1;
+      for (const n of wb.SheetNames) {
+        aoa = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: false });
+        hi = findHeaderRow(aoa);
+        if (hi >= 0) break;
+      }
+      if (hi < 0) throw new Error('Lajur "Nama" tidak dijumpai. Pastikan ada baris tajuk dengan perkataan "Nama".');
+      const { map, extra } = mapHeaders(aoa[hi]);
       const seen = new Set(existing.map((p) => (p.name.toLowerCase() + '|' + p.phone)));
-      let dup = 0;
-      const rows = aoa.slice(hi + 1).map((r) => {
-        const v = (k) => (k in map ? String(r[map[k]] ?? '').trim() : '');
-        return { name: v('name').replace(/\s+/g, ' '), phone: v('phone'), plate: v('plate'), size: v('size').toUpperCase(), category: v('category'), note: v('note') };
-      }).filter((r) => r.name.length >= 2).filter((r) => {
-        let ph = r.phone.replace(/\D/g, ''); if (ph.startsWith('60')) ph = '0' + ph.slice(2);
-        const k = r.name.toLowerCase() + '|' + ph;
-        if (seen.has(k)) { dup++; return false; }
-        seen.add(k); return true;
-      });
-      const label = { name: 'Nama', phone: 'Telefon', plate: 'No. plat', size: 'Saiz', category: 'Kategori', note: 'Nota' };
+      let dup = 0, nPartner = 0;
+      const out = [];   // senarai rata: rider diikuti pasangan (supaya ID berturutan)
+      const cell = (r, i) => (i === undefined ? '' : String(r[i] ?? '').replace(/\s+/g, ' ').trim());
+      for (const r of aoa.slice(hi + 1)) {
+        const name = cell(r, map.name);
+        if (name.length < 2 || /^(jumlah|total)\b/i.test(name)) continue;
+        const phone = cleanPhone(cell(r, map.phone));
+        const k = name.toLowerCase() + '|' + phone;
+        if (seen.has(k)) { dup++; continue; }
+        seen.add(k);
+        const notes = [cell(r, map.note), ...extra.map(([i, h]) => { const v = cell(r, i); return v ? `${h}: ${v}` : ''; })].filter(Boolean);
+        const main = { id: crypto.randomUUID(), name, phone, plate: cell(r, map.plate), size: cell(r, map.size).toUpperCase(), category: cell(r, map.category), note: notes.join(' · ').slice(0, 300), parent_id: null };
+        out.push(main);
+        const pn = cell(r, map.partner);
+        if (!noPartner(pn) && pn.length >= 2) {
+          out.push({ id: crypto.randomUUID(), name: pn, phone, plate: main.plate, size: cell(r, map.partner_size).toUpperCase(), category: 'Pasangan', note: `Pasangan kepada ${name}`, parent_id: main.id });
+          nPartner++;
+        }
+      }
+      const nMain = out.length - nPartner;
+      const label = { name: 'Nama', phone: 'Telefon', plate: 'No. plat', size: 'Saiz baju', partner: 'Nama pasangan', partner_size: 'Saiz pasangan', category: 'Kategori / model' };
       prev.innerHTML = `<div class="card stack" style="background:var(--card-2)">
-          <b>${rows.length} peserta baru${dup ? ` <span class="small muted">· ${dup} sudah ada / berulang (dilangkau)</span>` : ''}</b>
-          <div class="small">Lajur dikesan: ${Object.keys(map).map((k) => `<span class="badge green">${label[k]}</span>`).join(' ')} ${Object.keys(label).filter((k) => !(k in map)).map((k) => `<span class="badge gray">${label[k]} tiada</span>`).join(' ')}</div>
-          <div class="ci-table"><table><tr><th>Nama</th><th>Telefon</th><th>Plat</th><th>Saiz</th></tr>${rows.slice(0, 5).map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td>${esc(r.plate)}</td><td>${esc(r.size)}</td></tr>`).join('')}</table></div>
-          ${rows.length > 5 ? `<span class="small muted">… dan ${rows.length - 5} lagi</span>` : ''}
+          <b>${nMain} peserta${nPartner ? ` + ${nPartner} pasangan = ${out.length} orang` : ''}${dup ? ` <span class="small muted">· ${dup} sudah ada / berulang (dilangkau)</span>` : ''}</b>
+          <div class="small" style="line-height:2">Baris tajuk: baris ${hi + 1}. Lajur dikesan: ${Object.keys(label).filter((k) => map[k] !== undefined).map((k) => `<span class="badge green">${label[k]}</span>`).join(' ')} ${['phone', 'plate', 'size'].filter((k) => map[k] === undefined).map((k) => `<span class="badge gray">${label[k]} tiada</span>`).join(' ')}${extra.length ? `<br>Masuk ke Nota: ${extra.map(([, h]) => `<span class="badge gray">${esc(h)}</span>`).join(' ')}` : ''}</div>
+          <div class="ci-table"><table><tr><th>Nama</th><th>Telefon</th><th>Plat</th><th>Saiz</th><th>Kategori</th></tr>${out.slice(0, 8).map((r) => `<tr${r.parent_id ? ' style="color:var(--muted)"' : ''}><td>${r.parent_id ? '↳ ' : ''}${esc(r.name)}</td><td>${esc(r.phone)}</td><td>${esc(r.plate)}</td><td>${esc(r.size)}</td><td>${esc(r.category)}</td></tr>`).join('')}</table></div>
+          ${out.length > 8 ? `<span class="small muted">… dan ${out.length - 8} lagi</span>` : ''}
+          ${nPartner ? '<span class="small muted">Setiap pasangan dapat ID & QR sendiri. Mesej WhatsApp dihantar ke no. telefon rider, siap dengan tiket pasangan.</span>' : ''}
         </div>
-        <button class="btn block" id="igo"${rows.length ? '' : ' disabled'}>Masukkan ${rows.length} peserta</button>`;
-      prev.querySelector('#igo').onclick = (ev) => busy(ev.currentTarget, async () => {
+        <button class="btn block" id="igo"${out.length ? '' : ' disabled'}>Masukkan ${out.length} orang</button>`;
+      prev.querySelector('#igo').onclick = (ev) => { const btn = ev.currentTarget; busy(btn, async () => {
         try {
-          for (let i = 0; i < rows.length; i += 100) {
-            await must(sb.from('gathering_people').insert(rows.slice(i, i + 100).map((r) => ({ gathering_id: g.id, code: '', ...r }))));
-            ev.currentTarget && (ev.currentTarget.textContent = `Memasukkan… ${Math.min(i + 100, rows.length)} / ${rows.length}`);
+          for (let i = 0; i < out.length; i += 100) {
+            let chunk = out.slice(i, i + 100);
+            // Pastikan rider & pasangan dalam kumpulan yang sama
+            if (chunk.length && i + 100 < out.length && out[i + 100].parent_id) chunk = out.slice(i, i + 101);
+            await must(sb.from('gathering_people').insert(chunk.map((r) => ({ gathering_id: g.id, code: '', ...r }))));
+            if (chunk.length === 101) i++;
+            btn.textContent = `Memasukkan… ${Math.min(i + 100, out.length)} / ${out.length}`;
           }
-          closeSheet(); toast(`${rows.length} peserta dimasukkan`); reload();
+          closeSheet(); toast(`${out.length} orang dimasukkan`); reload();
         } catch (err) { fail(err); }
-      });
+      }); };
     } catch (err) { prev.innerHTML = ''; fail(err); }
   };
 }
@@ -565,6 +626,7 @@ async function exportExcel(g, people, handovers) {
   const rows = people.map((p) => {
     const r = {
       ID: p.code, Nama: p.name, 'No. Telefon': p.phone, 'No. Plat': p.plate, Saiz: p.size, Kategori: p.category, Nota: p.note,
+      'Pasangan kepada': p.parent_id && pById[p.parent_id] ? `${pById[p.parent_id].code} ${pById[p.parent_id].name}` : '',
       'Walk-in': p.walkin ? 'Ya' : '', 'WhatsApp dihantar': p.wa_sent_at ? fmtDateTime(p.wa_sent_at) : '',
       Hadir: p.checked_in_at ? fmtDateTime(p.checked_in_at) : '', Kaunter: p.checked_in_by || ''
     };
@@ -628,6 +690,7 @@ export async function ticketView({ token }) {
       <div class="tk-code">${esc(t.code)}</div>
       <div class="tk-name">${esc(t.name)}</div>
       <div class="tk-meta">${[t.plate && `<span>No. plat <b>${esc(t.plate)}</b></span>`, t.size && `<span>Saiz baju <b>${esc(t.size)}</b></span>`, t.category && `<span><b>${esc(t.category)}</b></span>`].filter(Boolean).join('')}</div>
+      ${(t.with || []).length ? `<div class="tk-with">Datang bersama: <b>${t.with.map((w) => esc(w.name) + ' (' + esc(w.code) + ')').join(', ')}</b></div>` : ''}
       ${t.checked_in_at ? `<div class="tk-done">${icon('check', 18)} Sudah check-in · ${esc(fmtDateTime(t.checked_in_at))}</div>` : ''}
     </div>
     <button class="btn block" id="tsave" style="background:linear-gradient(135deg,#F5C542,#D99A1E);color:#1a1205;border:0">${DL} Simpan gambar tiket</button>
@@ -847,7 +910,11 @@ export async function crewConsoleView(params, query) {
     if (!el) return;
     if (!current) { el.innerHTML = notice ? `<div class="kt-note ${notice.kind}">${esc(notice.text)}</div>` : ''; return; }
     const p = current;
-    const hs = await must(sb.from('gathering_handovers').select('*').eq('person_id', p.id));
+    const [hs, mateRows] = await Promise.all([
+      must(sb.from('gathering_handovers').select('*').eq('person_id', p.id)),
+      must(sb.from('gathering_people').select('*').eq('gathering_id', g.id).or(`parent_id.eq.${p.id}${p.parent_id ? `,id.eq.${p.parent_id},parent_id.eq.${p.parent_id}` : ''}`).neq('id', p.id).order('code'))
+    ]);
+    const mates = mateRows.filter((m) => m.id !== p.id && (m.parent_id === p.id || m.id === p.parent_id || (p.parent_id && m.parent_id === p.parent_id)));
     const left = items.filter((it) => !hs.some((h) => h.item === it));
     const status = p.checked_in_at
       ? `<div class="kt-status in">${icon('check', 22)} SUDAH CHECK-IN · ${esc(hhmm(p.checked_in_at))} · ${esc(p.checked_in_by || '')}</div>`
@@ -862,6 +929,7 @@ export async function crewConsoleView(params, query) {
           <span class="kt-info">${[p.plate && `<b>${esc(p.plate)}</b>`, p.category && esc(p.category), p.phone && esc(p.phone)].filter(Boolean).join('<br>') || '—'}</span>
         </div>
         ${p.note ? `<div class="kt-pnote">${esc(p.note)}</div>` : ''}
+        ${mates.length ? `<div class="kt-mates"><small>DATANG BERSAMA</small>${mates.map((m) => `<button class="kt-mate" data-mate="${m.id}"><b>${esc(m.code)}</b><span>${esc(m.name)}${m.size ? ' · Saiz ' + esc(m.size) : ''}</span><em>${m.checked_in_at ? icon('check', 14) + ' Hadir' : 'Buka →'}</em></button>`).join('')}</div>` : ''}
         ${items.length ? `<div class="kt-items">${items.map((it) => {
           const h = hs.find((x) => x.item === it);
           return h ? `<div class="kt-item done"><span>${icon('check', 18)} ${esc(it)}</span><small>Diambil ${esc(hhmm(h.given_at))} · ${esc(h.given_by)}</small></div>`
@@ -873,6 +941,7 @@ export async function crewConsoleView(params, query) {
         <button class="kt-next" id="knext">${icon('grid', 18)} Imbas peserta seterusnya</button>
       </div>`;
     el.querySelectorAll('[data-give]').forEach((b) => (b.onclick = () => give([b.dataset.give], b)));
+    el.querySelectorAll('[data-mate]').forEach((b) => (b.onclick = () => show(mates.find((m) => m.id === b.dataset.mate), false)));
     document.getElementById('kall')?.addEventListener('click', (e) => give(left, e.currentTarget));
     document.getElementById('knext').onclick = () => { current = null; notice = null; const kq = document.getElementById('kq'); if (kq) kq.value = ''; draw(); openScanner(onScan); };
     el.scrollIntoView({ block: 'start', behavior: 'smooth' });

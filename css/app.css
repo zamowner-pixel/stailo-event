@@ -626,3 +626,7 @@ body.kt-mode #app { max-width: 720px; }
 .ci-kind button span { font-size: 12px; color: var(--muted); line-height: 1.4; }
 .ci-kind button.on { border-color: var(--accent); background: var(--accent-soft); }
 .ci-kind button:disabled { opacity: .45; cursor: not-allowed; }
+.ag-row { gap: 8px; }
+.ag-link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; color: var(--text); }
+.ag-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+@media (max-width: 520px) { .ag-row { flex-wrap: wrap; } .ag-acts { width: 100%; justify-content: flex-end; } }

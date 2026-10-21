@@ -21,7 +21,7 @@ export async function adminHomeView() {
   const events = await activeEvents();
   let lots = [], recent = [], pendingAg = [];
   const notifs = await must(sb.from('admin_notifications').select('*').is('read_at', null).order('created_at', { ascending: false }).limit(15));
-  pendingAg = await must(sb.from('agreements').select('id,deadline,status,lot_codes,event_id,vendor:profiles(vendor_code,business_name)').eq('status', 'pending').order('deadline'));
+  pendingAg = await must(sb.from('agreements').select('id,deadline,status,lot_codes,event_id,vendor:profiles(vendor_code,business_name,phone)').eq('status', 'pending').order('deadline'));
   const reqs = await must(sb.from('lot_limit_requests').select('*, vendor:profiles(vendor_code,business_name,phone), event:events(name)').eq('status', 'pending').order('created_at'));
   if (events.length) {
     [lots, recent] = await Promise.all([
@@ -93,16 +93,26 @@ export async function adminHomeView() {
           <span class="grow"><span class="title">${esc(l.vendor?.business_name || '-')}</span><span class="small muted">${esc(l.vendor?.vendor_code || '')} · Resit deposit dihantar${events.length > 1 ? ' · ' + esc(evName(l.event_id)) : ''}</span></span>
           <a class="btn dark sm" href="#/a/tapak?e=${l.event_id}&l=${l.id}">Semak</a>
         </div>`).join('')}${pendingAg.map((g) => `
-        <a class="list-item" href="#/perjanjian/${g.id}">
+        <div class="list-item ag-row" style="cursor:default">
+          <a class="ag-link" href="#/perjanjian/${g.id}">
           <span class="code-tile${isExpired(g) ? ' amber' : ''}" style="min-width:48px">${esc(g.lot_codes)}</span>
-          <span class="grow"><span class="title">${esc(g.vendor?.business_name || '-')}</span><span class="small ${isExpired(g) ? '' : 'muted'}" style="${isExpired(g) ? 'color:var(--red)' : ''}">${isExpired(g) ? 'Tamat masa tandatangan · beri masa tambahan atau buka semula' : 'Menunggu tandatangan perjanjian · tamat ' + esc(fmtDateTime(g.deadline))}${events.length > 1 ? ' · ' + esc(evName(g.event_id)) : ''}</span></span>
+          <span class="grow"><span class="title">${esc(g.vendor?.business_name || '-')}</span><span class="small ${isExpired(g) ? '' : 'muted'}" style="${isExpired(g) ? 'color:var(--red)' : ''}">${isExpired(g) ? 'Tamat masa tandatangan · beri masa lagi atau batal' : 'Menunggu tandatangan perjanjian · tamat ' + esc(fmtDateTime(g.deadline))}${events.length > 1 ? ' · ' + esc(evName(g.event_id)) : ''}</span></span>
           <span class="badge ${isExpired(g) ? 'red' : 'amber'}">${isExpired(g) ? 'Tamat' : 'Tandatangan'}</span>
-        </a>`).join('')}${!toLock.length && !pendingAg.length ? '<div class="empty">Tiada tindakan diperlukan.</div>' : ''}</div>
+          </a>
+          <span class="ag-acts">
+            ${isExpired(g) ? `<button class="btn ghost sm" data-agext="${g.id}" aria-label="Beri masa tambahan kepada ${esc(g.vendor?.business_name || 'vendor')}">${icon('clock', 16)} Masa lagi</button>` : ''}
+            <button class="icon-btn" data-agdel="${g.id}" aria-label="Batal perjanjian ${esc(g.vendor?.business_name || '')}" style="color:var(--red)">${icon('trash', 18)}</button>
+          </span>
+        </div>`).join('')}${!toLock.length && !pendingAg.length ? '<div class="empty">Tiada tindakan diperlukan.</div>' : ''}</div>
 
       ${recent.length ? `<div class="section-title">Invois terkini <a href="#/a/invois" class="small">Lihat semua</a></div>
       <div class="list">${recent.map(invoiceRow).join('')}</div>` : ''}
     </div>${nav('#/a')}</div>`);
   document.querySelectorAll('[data-req]').forEach((b) => (b.onclick = () => requestSheet(reqs.find((r) => r.id === b.dataset.req))));
+  document.querySelectorAll('[data-agext]').forEach((b) => (b.onclick = () => busy(b, async () => {
+    try { await must(sb.rpc('admin_extend_agreement', { p_id: b.dataset.agext })); toast('Masa tandatangan dilanjutkan'); go('#/a?t=' + Date.now()); } catch (err) { fail(err); }
+  })));
+  document.querySelectorAll('[data-agdel]').forEach((b) => (b.onclick = () => cancelAgreementSheet(pendingAg.find((g) => g.id === b.dataset.agdel))));
   const ra = document.getElementById('readall');
   if (ra) ra.onclick = async () => {
     try { await must(sb.from('admin_notifications').update({ read_at: new Date().toISOString() }).is('read_at', null)); window.dispatchEvent(new Event('notif-change')); go('#/a?t=' + Date.now()); } catch (err) { fail(err); }
@@ -634,6 +644,31 @@ async function lotSheet(ev, lot, lots, reload) {
         }
       } catch (err) { fail(err); }
     };
+  });
+}
+
+// Batal perjanjian yang tidak ditandatangani: tapak jadi kosong, vendor boleh mohon semula
+function cancelAgreementSheet(g) {
+  const name = g.vendor?.business_name || 'vendor';
+  const s = openSheet(`<h2 style="color:var(--red)">Batal perjanjian ${esc(name)}?</h2>
+    <p class="small" style="margin:0">${isExpired(g) ? 'Vendor tidak menandatangani perjanjian dalam masa yang ditetapkan.' : 'Perjanjian ini masih menunggu tandatangan vendor.'}</p>
+    <div class="card stack" style="background:var(--card-2);gap:6px">
+      <div class="small">• Tapak <b>${esc(g.lot_codes)}</b> jadi <b>KOSONG</b> semula dan boleh dipilih vendor lain.</div>
+      <div class="small">• Tempahan vendor ini dibatalkan. Vendor boleh <b>mohon semula</b> jika tapak masih kosong.</div>
+      <div class="small">• Bayaran yang sudah dibuat (jika ada) perlu dipulangkan atau diuruskan sendiri.</div>
+    </div>
+    <div class="grid2"><button class="btn ghost" data-no>Kembali</button><button class="btn danger" data-yes>${icon('trash', 16)} Batal perjanjian</button></div>`);
+  s.querySelector('[data-no]').onclick = closeSheet;
+  s.querySelector('[data-yes]').onclick = (e) => busy(e.currentTarget, async () => {
+    try {
+      const r = await must(sb.rpc('admin_cancel_agreement', { p_id: g.id }));
+      const freed = r?.freed || [];
+      const msg = `Salam ${name},\n\nPerjanjian untuk tapak ${g.lot_codes} telah dibatalkan kerana tidak ditandatangani dalam masa yang ditetapkan.\n\nJika masih berminat, anda boleh log masuk ke apps dan memohon semula tapak yang masih kosong:\n${location.origin + location.pathname}\n\nTerima kasih.`;
+      const d = openSheet(`<div class="card row" style="background:var(--green-soft);color:var(--green);gap:10px">${icon('check', 22)}<div class="small"><b>Perjanjian dibatalkan</b><br>${freed.length ? 'Tapak ' + esc(freed.join(', ')) + ' kini kosong.' : 'Tiada tapak perlu dibuka (tapak sudah diambil atau dibuka sebelum ini).'}</div></div>
+        ${g.vendor?.phone ? `<a class="btn block" target="_blank" rel="noopener" href="${esc(waLink(g.vendor.phone, msg))}">${icon('wa', 18)} Maklumkan ${esc(name)} melalui WhatsApp</a>` : ''}
+        <button class="btn ghost block" data-close>Tutup</button>`);
+      d.querySelector('[data-close]').onclick = () => { closeSheet(); go('#/a?t=' + Date.now()); };
+    } catch (err) { fail(err); }
   });
 }
 
